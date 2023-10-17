@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <id>Beztek.Facade.Storage</id>
+    <version>0.9.0</version>
+    <authors>Peter Thomas</authors>
+    <owners>Beztek Software Solutions</owners>
+    <licenseUrl>https://github.com/Beztek-Software-Solutions/storage-facade/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/Beztek-Software-Solutions/storage-facade</projectUrl>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>Storage Facade</description>
+    <releaseNotes>Storage Facade</releaseNotes>
+    <copyright>Copyright 2023, Beztek Software Solutions</copyright>
+    <tags>Beztek.Facade;Beztek.Facade.Storage;storage-facade;StorageFacadeFacade</tags>
+    <Description></Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.18.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
+    <PackageReference Include="MimeTypeMapOfficial" Version="1.0.17" />
+    <PackageReference Include="SMBLibrary" Version="1.5.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+	  <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+	    <_Parameter1>Beztek.Facade.Storage.Tests</_Parameter1>
+	  </AssemblyAttribute>
+  </ItemGroup> 	
+
+</Project>
