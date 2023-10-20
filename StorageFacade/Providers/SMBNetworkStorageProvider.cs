@@ -6,6 +6,7 @@ namespace Beztek.Facade.Storage.Providers
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
+    using Beztek.Facade.Storage.Providers;
     using SMBLibrary;
     using SMBLibrary.Client;
 

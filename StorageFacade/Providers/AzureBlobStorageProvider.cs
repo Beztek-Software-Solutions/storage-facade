@@ -14,7 +14,7 @@ namespace Beztek.Facade.Storage.Providers
     /// <summary>
     /// Implements the storage provider for Azure Blob Storage
     /// </summary>
-    internal class AzureBlobStorageProvider : IStorageProvider
+    public class AzureBlobStorageProvider : IStorageProvider
     {
         AzureBlobStorageProviderConfig AzureBlobStorageProviderConfig { get; }
         private BlobContainerClient BlobContainerClient;

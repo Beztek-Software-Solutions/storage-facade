@@ -1,6 +1,6 @@
 // Copyright (c) Beztek Software Solutions. All rights reserved.
 
-namespace Beztek.Facade.Storage.Providers
+namespace Beztek.Facade.Storage
 {
     public class SMBNetworkStorageProviderConfig : IStorageProviderConfig
     {

@@ -3,7 +3,7 @@
 namespace Beztek.Facade.Storage
 {
     using Beztek.Facade.Storage.Providers;
-
+    
     /// <summary>
     /// QueueClientFactory.
     /// </summary>
