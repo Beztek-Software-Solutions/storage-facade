@@ -9,18 +9,28 @@ namespace Beztek.Facade.Storage.Providers
     /// <summary>
     /// Implements the storage provider for the local filesystem
     /// </summary>
-    public class FileStorageProvider : IStorageProvider
+    internal class FileStorageProvider : IStorageProvider
     {
-        FileStorageProviderConfig LocalFileStorageProviderConfig { get; }
+        private FileStorageProviderConfig localFileStorageProviderConfig;
 
-        public FileStorageProvider(FileStorageProviderConfig fileStorageProviderConfig)
+        internal FileStorageProvider(FileStorageProviderConfig fileStorageProviderConfig)
         {
-            this.LocalFileStorageProviderConfig = fileStorageProviderConfig;
+            this.localFileStorageProviderConfig = fileStorageProviderConfig;
         }
 
-        public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        public string GetName()
         {
-            IEnumerable<FileInfo> fileInfoEnumerable = new DirectoryInfo(rootPath).EnumerateFiles("*");
+            return localFileStorageProviderConfig.Name;
+        }
+
+        public new StorageFacadeType GetType()
+        {
+            return localFileStorageProviderConfig.StorageFacadeType;
+        }
+
+        public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        {
+            IEnumerable<FileInfo> fileInfoEnumerable = new DirectoryInfo(logicalPath).EnumerateFiles("*");
 
             foreach (FileInfo fileInfo in fileInfoEnumerable)
             {
@@ -30,10 +40,10 @@ namespace Beztek.Facade.Storage.Providers
             }
             if (isRecursive)
             {
-                foreach (string subDirectory in Directory.GetDirectories(rootPath))
+                foreach (string subDirectory in Directory.GetDirectories(logicalPath))
                 {
                     // Do not recurse symbolic links
-                    if (new DirectoryInfo(rootPath).LinkTarget == null)
+                    if (new DirectoryInfo(logicalPath).LinkTarget == null)
                     {
                         foreach (StorageInfo storageInfo in EnumerateStorageInfo(subDirectory, true, storageFilter))
                         {
@@ -45,30 +55,30 @@ namespace Beztek.Facade.Storage.Providers
             yield break;
         }
 
-        public StorageInfo GetStorageInfo(string storagePath)
+        public StorageInfo GetStorageInfo(string logicalPath)
         {
-            return GetStorageInfo(new FileInfo(storagePath));
+            return GetStorageInfo(new FileInfo(logicalPath));
         }
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            FileInfo fileInfo = new FileInfo(storageInfo.Path);
-            return await Task.FromResult(File.OpenRead(storageInfo.Path)).ConfigureAwait(false);
+            FileInfo fileInfo = new FileInfo(storageInfo.LogicalPath);
+            return await Task.FromResult(File.OpenRead(storageInfo.LogicalPath)).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
         {
-            using (FileStream fileStream = File.Create(storagePath))
+            using (FileStream fileStream = File.Create(logicalPath))
             {
                 inputStream.Seek(0, SeekOrigin.Begin);
                 await inputStream.CopyToAsync(fileStream).ConfigureAwait(false);
             }
         }
 
-        public async Task DeleteStorageAsync(string storagePath)
+        public async Task DeleteStorageAsync(string logicalPath)
         {
             await Task.Run(() => {
-                File.Delete(storagePath);
+                File.Delete(logicalPath);
             });
         }
 
@@ -79,7 +89,7 @@ namespace Beztek.Facade.Storage.Providers
             StorageInfo currStorageInfo = new StorageInfo();
             currStorageInfo.IsFile = true;
             currStorageInfo.Name = fileInfo.Name;
-            currStorageInfo.Path = fileInfo.FullName;
+            currStorageInfo.LogicalPath = fileInfo.FullName;
             currStorageInfo.Timestamp = fileInfo.LastWriteTime;
             currStorageInfo.SizeBytes = fileInfo.Length;
 

@@ -1,6 +1,6 @@
 // Copyright (c) Beztek Software Solutions. All rights reserved.
 
-namespace Beztek.Facade.Storage.Providers
+namespace Beztek.Facade.Storage
 {
     using System.Collections.Generic;
     using System.IO;
@@ -11,6 +11,10 @@ namespace Beztek.Facade.Storage.Providers
     /// </summary>
     public interface IStorageProvider
     {
+        string GetName();
+
+        StorageFacadeType GetType();
+
         IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null);
 
         StorageInfo GetStorageInfo(string storagePath);

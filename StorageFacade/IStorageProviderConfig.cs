@@ -6,6 +6,6 @@ namespace Beztek.Facade.Storage
     {
         string Name { get; }
 
-        StorageProviderType StorageProviderType { get; }
+        StorageFacadeType StorageFacadeType { get; }
     }
 }

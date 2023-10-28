@@ -13,7 +13,7 @@ namespace Beztek.Facade.Storage
     public class StorageInfo
     {
         public string Name { get; set; }
-        public string Path { get; set; }
+        public string LogicalPath { get; set; }
         public DateTime Timestamp { get; set; }
         public bool IsDirectory { get { return !IsFile; } }
         public bool IsFile { get; set; } = false;

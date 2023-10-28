@@ -2,10 +2,11 @@
 
 namespace Beztek.Facade.Storage
 {
-    public enum StorageProviderType
+    public enum StorageFacadeType
     {
         LocalFileStore,
         SMBNetworkStore,
-        AzureBlobStore
+        AzureBlobStore,
+        ComboStore
     }
 }

@@ -11,13 +11,23 @@ namespace Beztek.Facade.Storage
     /// <summary>
     /// Interface defining the back-end requirements for the StorageFacade
     /// </summary>
-    public class StorageFacade
+    public class StorageFacade : IStorageFacade
     {
         private IStorageProvider storageProvider;
 
         public StorageFacade(IStorageProvider storageProvider)
         {
             this.storageProvider = storageProvider;
+        }
+
+        public string GetName()
+        {
+            return storageProvider.GetName();
+        }
+
+        public StorageFacadeType GetType()
+        {
+            return storageProvider.GetType();
         }
 
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
@@ -43,13 +53,6 @@ namespace Beztek.Facade.Storage
         public async Task DeleteStorageAsync(string storagePath)
         {
             await storageProvider.DeleteStorageAsync(storagePath);
-        }
-
-        public static string ToString(StorageInfo storageInfo)
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.Append($"{storageInfo.Path} {storageInfo.IsFile} {storageInfo.Timestamp} {storageInfo.MimeType} {storageInfo.SizeBytes}");
-            return sb.ToString();
         }
     }
 }

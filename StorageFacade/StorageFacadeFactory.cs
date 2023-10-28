@@ -2,6 +2,7 @@
 
 namespace Beztek.Facade.Storage
 {
+    using System.Collections.Generic;
     using Beztek.Facade.Storage.Providers;
     
     /// <summary>
@@ -14,19 +15,19 @@ namespace Beztek.Facade.Storage
         /// </summary>
         /// <param name="storageProviderConfig"></param>
         /// <returns></returns>
-        public static StorageFacade GetStorageFacade(IStorageProviderConfig storageProviderConfig)
+        public static IStorageFacade GetStorageFacade(IStorageProviderConfig storageProviderConfig)
         {
-            StorageFacade storageFacade = null;
+            IStorageFacade storageFacade = null;
 
-            if (StorageProviderType.LocalFileStore == storageProviderConfig.StorageProviderType)
+            if (StorageFacadeType.LocalFileStore == storageProviderConfig.StorageFacadeType)
             {
-                return new StorageFacade(new FileStorageProvider((FileStorageProviderConfig)storageProviderConfig));
+                return new StorageFacade(new FileStorageProvider(new FileStorageProviderConfig()));
             }
-            else if (StorageProviderType.SMBNetworkStore == storageProviderConfig.StorageProviderType)
+            else if (StorageFacadeType.SMBNetworkStore == storageProviderConfig.StorageFacadeType)
             {
                 return new StorageFacade(new SMBNetworkStorageProvider((SMBNetworkStorageProviderConfig)storageProviderConfig));
             }
-            else if (StorageProviderType.AzureBlobStore == storageProviderConfig.StorageProviderType)
+            else if (StorageFacadeType.AzureBlobStore == storageProviderConfig.StorageFacadeType)
             {
                 return new StorageFacade(new AzureBlobStorageProvider((AzureBlobStorageProviderConfig)storageProviderConfig));
             }

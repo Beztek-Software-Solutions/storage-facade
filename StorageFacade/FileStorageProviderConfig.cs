@@ -6,11 +6,11 @@ namespace Beztek.Facade.Storage
     {
         public string Name { get; }
 
-        public StorageProviderType StorageProviderType { get; } = StorageProviderType.LocalFileStore;
+        public StorageFacadeType StorageFacadeType { get; } = StorageFacadeType.LocalFileStore;
 
-        public FileStorageProviderConfig(string name)
+        public FileStorageProviderConfig()
         {
-            this.Name = name;
+            this.Name = "Local Store";
         }
     }
 }

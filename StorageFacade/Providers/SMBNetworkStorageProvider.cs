@@ -5,77 +5,80 @@ namespace Beztek.Facade.Storage.Providers
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
+    using System.Text;
     using System.Threading.Tasks;
-    using Beztek.Facade.Storage.Providers;
     using SMBLibrary;
     using SMBLibrary.Client;
+    using FileAttributes = SMBLibrary.FileAttributes;
 
     /// <summary>
     /// Implements the storage provider for the local filesystem
     /// </summary>
-    public class SMBNetworkStorageProvider : IStorageProvider
+    internal class SMBNetworkStorageProvider : IStorageProvider
     {
-        IStorageProviderConfig StorageProviderConfig { get; }
+        private SMBNetworkStorageProviderConfig storageProviderConfig;
 
-        private SMB2Client smbClient;
+        private SMB2Client _smbClient;
         private Dictionary<string, ISMBFileStore> fileStoreCache = new Dictionary<string, ISMBFileStore>();
 
-        public SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig)
+        internal SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig)
         {
-            this.StorageProviderConfig = smbNetworkStorageProviderConfig;
+            this.storageProviderConfig = smbNetworkStorageProviderConfig;
 
-            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)StorageProviderConfig;
+            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)storageProviderConfig;
 
-            this.smbClient = new SMB2Client();
-            bool isConnected = smbClient.Connect(config.Server, SMBTransportType.DirectTCPTransport);
-            if (!isConnected)
-                throw new Exception($"Unable to connect to '{config.Server}'");
-
-            NTStatus status = smbClient.Login(config.Domain, config.Username, config.Password, AuthenticationMethod.NTLMv2);
-            if (status != NTStatus.STATUS_SUCCESS)
-                throw new Exception($"Unable to authenticate as '{config.Username}' in domain '{config.Domain}'");
+            _smbClient = new SMB2Client();
+            GetAuthenticatedSmbClient();
         }
 
-        public List<string> GetShares()
+        public string GetName()
         {
-            return smbClient.ListShares(out NTStatus status);
+            return storageProviderConfig.Name;
         }
 
-        public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        public new StorageFacadeType GetType()
         {
-            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)StorageProviderConfig;
-            ISMBFileStore fileStore = GetFileStore(@$"{config.ShareName}");
+            return storageProviderConfig.StorageFacadeType;
+        }
 
-            NTStatus status = fileStore.CreateFile(
-                out object directoryHandle,
-                out FileStatus fileStatus,
-                @$"{rootPath}",
-                AccessMask.GENERIC_READ,
-                SMBLibrary.FileAttributes.Directory,
-                ShareAccess.Read | ShareAccess.Write,
-                CreateDisposition.FILE_OPEN,
-                CreateOptions.FILE_DIRECTORY_FILE,
-                null);
-
-            if (status != NTStatus.STATUS_SUCCESS)
-                throw new Exception($"Unable to get the directory handle {rootPath} - {status}");
+        public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        {
+            ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
+            string relativePath = GetRelativePath(logicalPath);
+            object directoryHandle = null;
 
             try
             {
+                NTStatus status = fileStore.CreateFile(
+                    out directoryHandle,
+                    out FileStatus fileStatus,
+                    @$"{relativePath}",
+                    AccessMask.GENERIC_READ,
+                    SMBLibrary.FileAttributes.Directory,
+                    ShareAccess.Read | ShareAccess.Write,
+                    CreateDisposition.FILE_OPEN,
+                    CreateOptions.FILE_DIRECTORY_FILE,
+                    null);
+
+                if (status != NTStatus.STATUS_SUCCESS)
+                    throw new Exception($"Unable to get the directory handle {logicalPath} - {status} (tried {GetPhysicalPath(logicalPath)})");
+
                 fileStore.QueryDirectory(out List<QueryDirectoryFileInformation> fileList, directoryHandle, @"*", FileInformationClass.FileDirectoryInformation);
 
                 foreach (FileDirectoryInformation fileInfo in fileList)
                 {
-                    StorageInfo storageInfo = GetStorageInfo(config.Server, config.ShareName, rootPath, fileInfo);
+                    StorageInfo storageInfo = GetStorageInfo(relativePath, fileInfo);
                     if (storageInfo.IsFile)
                     {
                         if (StorageFilter.IsMatch(storageFilter, storageInfo))
+                        {
                             yield return storageInfo;
+                        }
                     }
-                    else if (isRecursive && (!".".Equals(storageInfo.Name)) && (!"..".Equals(storageInfo.Name)))
+                    else if (isRecursive && (!@".".Equals(storageInfo.Name)) && (!@"..".Equals(storageInfo.Name)))
                     {
-                        string subPath = rootPath.Equals("") ? @$"{storageInfo.Name}" : @$"{rootPath}/{storageInfo.Name}";
-                        foreach (StorageInfo subStorageInfo in EnumerateStorageInfo(subPath, true, storageFilter))
+                        foreach (StorageInfo subStorageInfo in EnumerateStorageInfo(storageInfo.LogicalPath, true, storageFilter))
                         {
                             yield return subStorageInfo;
                         }
@@ -85,65 +88,66 @@ namespace Beztek.Facade.Storage.Providers
             }
             finally
             {
-                fileStore.CloseFile(directoryHandle);
+                // Close the directory handle
+                if (directoryHandle != null)
+                    fileStore.CloseFile(directoryHandle);
             }
         }
 
-        public StorageInfo GetStorageInfo(string storagePath)
+        public StorageInfo GetStorageInfo(string logicalPath)
         {
-            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)StorageProviderConfig;
             List<QueryDirectoryFileInformation> fileList;
 
-            ISMBFileStore fileStore = GetFileStore(@$"{config.ShareName}");
+            ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
 
-            string filePath = storagePath.Substring(@$"\\{config.Server}\{config.ShareName}\".Length);
-            string[] paths = filePath.Split(@"\");
-            string fileName = paths[paths.Length - 1];
-            string sharePath = filePath.Substring(0, filePath.Length - fileName.Length);
-
-            NTStatus status = fileStore.CreateFile(
-                out object directoryHandle,
-                out FileStatus fileStatus,
-                @$"{sharePath}",
-                AccessMask.GENERIC_READ,
-                SMBLibrary.FileAttributes.Directory,
-                ShareAccess.Read | ShareAccess.Write,
-                CreateDisposition.FILE_OPEN,
-                CreateOptions.FILE_DIRECTORY_FILE,
-                null);
-
-            if (status != NTStatus.STATUS_SUCCESS)
-                throw new Exception($"Unable to get the directory handle {sharePath} - {status}");
+            string relativePath = GetRelativePath(logicalPath);
+            string fileName = getFileName(logicalPath);
+            string relativeParentPath = relativePath.Substring(0, relativePath.Length - fileName.Length);
+            object directoryHandle = null;
 
             try
             {
+                NTStatus status = fileStore.CreateFile(
+                    out directoryHandle,
+                    out FileStatus fileStatus,
+                    @$"{relativeParentPath}",
+                    AccessMask.GENERIC_READ,
+                    SMBLibrary.FileAttributes.Directory,
+                    ShareAccess.Read | ShareAccess.Write,
+                    CreateDisposition.FILE_OPEN,
+                    CreateOptions.FILE_DIRECTORY_FILE,
+                    null);
+
+                if (status != NTStatus.STATUS_SUCCESS)
+                    throw new Exception($"Unable to get the directory handle {relativeParentPath} - {status}");
+
                 fileStore.QueryDirectory(out fileList, directoryHandle, @$"{fileName}", FileInformationClass.FileDirectoryInformation);
-                return GetStorageInfo(config.Server, config.ShareName, sharePath, (FileDirectoryInformation)fileList[0]);
+                return GetStorageInfo(relativeParentPath, (FileDirectoryInformation)fileList[0]);
             }
             finally
             {
-                fileStore.CloseFile(directoryHandle);
+                // Close the directory handle
+                if (directoryHandle != null)
+                    fileStore.CloseFile(directoryHandle);
             }
         }
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)StorageProviderConfig;
-            ISMBFileStore fileStore = GetFileStore(@$"{config.ShareName}");
+            ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
 
-            string filePath = storageInfo.Path.Substring(@$"\\{config.Server}\{config.ShareName}\".Length);
-            string[] paths = filePath.Split(@"\");
-            string fileName = paths[paths.Length - 1];
-            string sharePath = filePath.Substring(0, filePath.Length - fileName.Length);
-
+            string relativePath = GetRelativePath(storageInfo.LogicalPath);
+            string fileName = getFileName(storageInfo.LogicalPath);
+            string relativeParentPath = relativePath.Substring(0, relativePath.Length - fileName.Length);
             object fileHandle = null;
+
             try
             {
                 // Open the file
                 fileStore.CreateFile(
                     out fileHandle,
                     out FileStatus fileStatus,
-                    filePath,
+                    relativePath,
                     AccessMask.GENERIC_READ,
                     SMBLibrary.FileAttributes.Normal,
                     ShareAccess.Read,
@@ -153,7 +157,7 @@ namespace Beztek.Facade.Storage.Providers
                 );
 
                 if (fileStatus != FileStatus.FILE_OPENED)
-                    throw new Exception($"Failed to open file: {fileName} under {sharePath}: {fileStatus}");
+                    throw new Exception($"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}");
 
                 // Read file into MemoryStream
                 MemoryStream ms = new MemoryStream();
@@ -181,118 +185,192 @@ namespace Beztek.Facade.Storage.Providers
             }
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
         {
-            await Task.Run(() => {
-                string[] paths = storagePath.Split(@"\");
-                string shareName = paths[3];
-                string relativePath = storagePath.Substring(paths[2].Length + paths[3].Length + 4);
-                ISMBFileStore fileStore = GetFileStore(@$"{shareName}");
-                try
+            string relativePath = GetRelativePath(logicalPath);
+            ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
+            object fileHandle = null;
+
+            try
+            {
+                await Task.Run(() =>
                 {
                     NTStatus status = fileStore.CreateFile(
-                        out object fileHandle,
-                        out FileStatus fileStatus,
-                        relativePath,
-                        AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE,
-                        SMBLibrary.FileAttributes.Normal,
-                        ShareAccess.None,
-                        CreateDisposition.FILE_OVERWRITE_IF,
-                        CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT,
-                        null);
+                           out fileHandle,
+                           out FileStatus fileStatus,
+                           relativePath,
+                           AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE,
+                           SMBLibrary.FileAttributes.Normal,
+                           ShareAccess.None,
+                           CreateDisposition.FILE_OVERWRITE_IF,
+                           CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT,
+                           null);
                     if (status == NTStatus.STATUS_SUCCESS)
                     {
-                        byte[] buffer = new byte[8 * 1024];
+                        byte[] buffer = new byte[64 * 1024];
                         int len;
+                        int writeOffset = 0;
                         while ((len = inputStream.Read(buffer, 0, buffer.Length)) > 0)
                         {
-                            byte[] data = new byte[len];
-                            Array.Copy(buffer, 0, data, 0, len);
-                            fileStore.WriteFile(out int numberOfBytesWritten, fileHandle, 0, data);
-                            if (status != NTStatus.STATUS_SUCCESS || numberOfBytesWritten != len)
+                            if (len < buffer.Length)
                             {
-                                throw new Exception($"Failed to write to file {relativePath} at share {shareName}");
+                                Array.Resize<byte>(ref buffer, len);
                             }
+                            status = fileStore.WriteFile(out int numberOfBytesWritten, fileHandle, writeOffset, buffer);
+
+                            if (status != NTStatus.STATUS_SUCCESS || numberOfBytesWritten != len)
+                                throw new Exception($"Failed to write to file {relativePath} at share {storageProviderConfig.ShareName}");
+
+                            writeOffset += len;
                         }
                         status = fileStore.CloseFile(fileHandle);
                     }
                     else
                     {
-                        throw new Exception($"Unable to get file handle to {storagePath} - {status}");
+                        throw new Exception($"Unable to get file handle to {logicalPath} - {status}");
                     }
-                }
-                finally
-                {
-                    fileStore.Disconnect();
-                }
-            });
+                });
+            }
+            finally
+            {
+                // Close the file handle
+                if (fileHandle != null)
+                    fileStore.CloseFile(fileHandle);
+            }
         }
 
-        public async Task DeleteStorageAsync(string storagePath)
+        public async Task DeleteStorageAsync(string logicalPath)
         {
-            await Task.Run(() => {
-                string[] paths = storagePath.Split(@"\");
-                string shareName = paths[3];
-                string relativePath = storagePath.Substring(paths[2].Length + paths[3].Length + 4);
-                ISMBFileStore fileStore = GetFileStore(@$"{shareName}");
-                object fileHandle = null;
-                try
-                {
-                    NTStatus status = fileStore.CreateFile(
-                        out fileHandle,
-                        out FileStatus fileStatus,
-                        storagePath,
-                        AccessMask.GENERIC_WRITE | AccessMask.DELETE,
-                        0,
-                        ShareAccess.None,
-                        CreateDisposition.FILE_OPEN,
-                        CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_DELETE_ON_CLOSE,
-                        null);
+            string relativePath = GetRelativePath(logicalPath);
+            ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
+            object fileHandle = null;
 
-                    if (status == NTStatus.STATUS_SUCCESS)
-                        throw new Exception($"Unable to delete {storagePath} - {status}");
-                }
-                finally
+            try
+            {
+                await Task.Run(() =>
                 {
-                    if (fileHandle != null)
-                        fileStore.CloseFile(fileHandle);
+                    try
+                    {
+                        NTStatus status = fileStore.CreateFile(
+                            out fileHandle,
+                            out FileStatus fileStatus,
+                            relativePath,
+                            AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE,
+                            FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN,
+                            CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT,
+                            null);
 
-                    fileStore.Disconnect();
-                }
-            });
+                        if (status != NTStatus.STATUS_SUCCESS)
+                            throw new Exception($"Unable to delete {logicalPath} - {status}");
+
+                        FileDispositionInformation fileDispositionInformation = new FileDispositionInformation();
+                        fileDispositionInformation.DeletePending = true;
+                        status = fileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+
+                        if (status != NTStatus.STATUS_SUCCESS)
+                            throw new Exception($"Unable to delete {logicalPath} - {status}");
+                    }
+                    finally
+                    {
+                        if (fileHandle != null)
+                            fileStore.CloseFile(fileHandle);
+                    }
+                });
+            }
+            finally
+            {
+                // Close the file handle
+                if (fileHandle != null)
+                    fileStore.CloseFile(fileHandle);
+            }
         }
 
         // Internal
 
+        private SMB2Client GetAuthenticatedSmbClient()
+        {
+            if (!_smbClient.IsConnected)
+            {
+                bool isConnected = _smbClient.Connect(storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
+                if (!isConnected)
+                    throw new Exception($"Unable to connect to '{storageProviderConfig.LogicalServer}'");
+
+                NTStatus status = _smbClient.Login(storageProviderConfig.Domain, storageProviderConfig.Username, storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
+                if (status != NTStatus.STATUS_SUCCESS)
+                    throw new Exception($"Unable to authenticate as '{storageProviderConfig.Username}' in domain '{storageProviderConfig.Domain}'");
+            }
+            return _smbClient;
+        }
+
+        private string GetPhysicalPath(string logicalPath)
+        {
+            if (logicalPath.ToLower().StartsWith(@$"\\{storageProviderConfig.LogicalServer}.{storageProviderConfig.Domain}") || logicalPath.ToLower().StartsWith(@$"\\{storageProviderConfig.LogicalServer}"))
+            {
+                return @$"\\{storageProviderConfig.PhysicalServer}\{storageProviderConfig.ShareName}\{GetRelativePath(logicalPath)}";
+            }
+            return null;
+        }
+
+        private string GetRelativePath(string logicalPath)
+        {
+            string[] paths = logicalPath.Replace(@$"/", @$"\").Split(@"\");
+            StringBuilder sb = new StringBuilder();
+            int splitLength = storageProviderConfig.LogicalServer.Split(@"\").Length + 3;
+            if (paths.Length < splitLength)
+                throw new ArgumentException($"Path {logicalPath} is not the full path");
+
+            if (paths.Length > splitLength)
+            {
+                for (int index = splitLength; index < paths.Length; index++)
+                {
+                    sb.Append(paths[index]);
+                    if (index < paths.Length - 1)
+                        sb.Append(@"\");
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private string getFileName(string logicalPath)
+        {
+            string normalizedPath = logicalPath.Replace(@$"/", @$"\");
+            string[] paths = normalizedPath.Split(@"\");
+            return paths.Last();
+        }
+
         private ISMBFileStore GetFileStore(string shareName)
         {
             fileStoreCache.TryGetValue(shareName, out ISMBFileStore fileStore);
-            if (fileStore == null)
+            if ((!_smbClient.IsConnected) || fileStore == null)
             {
-                SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)StorageProviderConfig;
+                SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)storageProviderConfig;
                 NTStatus status;
-                fileStore = smbClient.TreeConnect(@$"{config.ShareName}", out status);
+                fileStore = GetAuthenticatedSmbClient().TreeConnect(shareName, out status);
                 if (status != NTStatus.STATUS_SUCCESS)
                     throw new Exception($"Unable to load the file share '{shareName}': {status}");
 
-                fileStoreCache.Add(shareName, fileStore);
+                fileStoreCache[shareName] = fileStore;
             }
             return fileStore;
         }
 
-        private StorageInfo GetStorageInfo(string server, string shareName, string rootPath, FileDirectoryInformation fileInfo)
+        private StorageInfo GetStorageInfo(string relativeParentPath, FileDirectoryInformation fileInfo)
         {
             StorageInfo currStorageInfo = new StorageInfo();
             currStorageInfo.IsFile = (fileInfo.FileAttributes & SMBLibrary.FileAttributes.Directory) != SMBLibrary.FileAttributes.Directory;
             currStorageInfo.Name = fileInfo.FileName;
-            string parentFolderWindows = rootPath.Replace(@"/", @"\");
+            string parentFolderWindows = relativeParentPath.Replace(@"/", @"\");
+            if (parentFolderWindows.EndsWith(@"\"))
+                parentFolderWindows = parentFolderWindows.Substring(0, parentFolderWindows.Length - 1);
+
             if ("".Equals(parentFolderWindows))
             {
-                currStorageInfo.Path = @$"\\{server}\{shareName}\{fileInfo.FileName}";
+                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{fileInfo.FileName}";
             }
             else
             {
-                currStorageInfo.Path = @$"\\{server}\{shareName}\{parentFolderWindows}\{fileInfo.FileName}";
+                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{parentFolderWindows}\{fileInfo.FileName}";
             }
             currStorageInfo.Timestamp = fileInfo.LastWriteTime;
             currStorageInfo.SizeBytes = fileInfo.Length;

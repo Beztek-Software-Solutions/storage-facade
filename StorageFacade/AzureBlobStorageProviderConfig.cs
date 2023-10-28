@@ -2,35 +2,30 @@
 
 namespace Beztek.Facade.Storage
 {
+    using System.Collections.Generic;
+
     /// <summary>
     /// Implements the storage provider configuration for Azure Blob Storage
     /// </summary>
     public class AzureBlobStorageProviderConfig : IStorageProviderConfig
     {
-        private string v;
-
         public string Name { get; }
 
-        public StorageProviderType StorageProviderType { get; }
+        public StorageFacadeType StorageFacadeType { get; }
 
-        public string AccessKey { get; }
+        internal string AccessKey { get; }
 
-        public string AccountName { get; }
+        internal string AccountName { get; }
 
-        public string ContainerName { get; }
+        internal string ContainerName { get; }
 
-        public AzureBlobStorageProviderConfig(string name, string accountName, string accessKey, string containerName)
+        public AzureBlobStorageProviderConfig(string accountName, string accessKey, string containerName)
         {
-            this.Name = name;
-            this.StorageProviderType = StorageProviderType.AzureBlobStore;
+            this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
             this.AccessKey = accessKey;
             this.AccountName = accountName;
             this.ContainerName = containerName;
-        }
-
-        public AzureBlobStorageProviderConfig(string v)
-        {
-            this.v = v;
+            this.Name = $"{accessKey}|{accountName}|{containerName}";
         }
     }
 }

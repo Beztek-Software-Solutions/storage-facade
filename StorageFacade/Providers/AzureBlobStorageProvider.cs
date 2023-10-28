@@ -10,30 +10,41 @@ namespace Beztek.Facade.Storage.Providers
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
     using Beztek.Facade.Storage;
+    using SMBLibrary.Services;
 
     /// <summary>
     /// Implements the storage provider for Azure Blob Storage
     /// </summary>
-    public class AzureBlobStorageProvider : IStorageProvider
+    internal class AzureBlobStorageProvider : IStorageProvider
     {
-        AzureBlobStorageProviderConfig AzureBlobStorageProviderConfig { get; }
-        private BlobContainerClient BlobContainerClient;
+        private AzureBlobStorageProviderConfig azureBlobStorageProviderConfig { get; }
+        private BlobContainerClient blobContainerClient;
 
-        public AzureBlobStorageProvider(AzureBlobStorageProviderConfig azureBlobStorageProviderConfig)
+        internal AzureBlobStorageProvider(AzureBlobStorageProviderConfig azureBlobStorageProviderConfig)
         {
-            this.AzureBlobStorageProviderConfig = azureBlobStorageProviderConfig;
+            this.azureBlobStorageProviderConfig = azureBlobStorageProviderConfig;
 
             BlobServiceClient blobServiceClient = new BlobServiceClient(new Uri($"https://{azureBlobStorageProviderConfig.AccountName}.blob.core.windows.net"), new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccessKey));
-            this.BlobContainerClient = blobServiceClient.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
+            this.blobContainerClient = blobServiceClient.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
         }
 
-        public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        public string GetName()
         {
-            foreach (BlobHierarchyItem blobOrFolder in BlobContainerClient.GetBlobsByHierarchy(prefix: rootPath, delimiter: "/"))
+            return azureBlobStorageProviderConfig.Name;
+        }
+
+        public new StorageFacadeType GetType()
+        {
+            return azureBlobStorageProviderConfig.StorageFacadeType;
+        }
+
+        public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
+        {
+            foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: logicalPath, delimiter: "/"))
             {
                 if (blobOrFolder.IsBlob)
                 {
-                    BlobProperties blobProperties = BlobContainerClient.GetBlobClient(blobOrFolder.Blob.Name).GetProperties();
+                    BlobProperties blobProperties = blobContainerClient.GetBlobClient(blobOrFolder.Blob.Name).GetProperties();
                     string path = blobOrFolder.Blob.Name;
                     string[] paths = path.Split("/");
                     string name = paths[paths.Length - 1];
@@ -52,17 +63,17 @@ namespace Beztek.Facade.Storage.Providers
             yield break;
         }
 
-        public StorageInfo GetStorageInfo(string storagePath)
+        public StorageInfo GetStorageInfo(string logicalPath)
         {
-            BlobClient blobClient = BlobContainerClient.GetBlobClient(storagePath);
+            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
             BlobProperties blobProperties = blobClient.GetProperties();
 
-            return GetStorageInfo(storagePath, storagePath, blobProperties);
+            return GetStorageInfo(logicalPath, logicalPath, blobProperties);
         }
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            BlobClient blobClient = BlobContainerClient.GetBlobClient(storageInfo.Name);
+            BlobClient blobClient = blobContainerClient.GetBlobClient(storageInfo.Name);
             if (!await blobClient.ExistsAsync())
                 throw new Exception($"Unable to find {storageInfo.Name}");
 
@@ -70,30 +81,30 @@ namespace Beztek.Facade.Storage.Providers
             return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
         {
             // Get a reference to a blob
-            BlobClient blobClient = BlobContainerClient.GetBlobClient(storagePath);
+            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
             // Upload data from the local file
             await blobClient.UploadAsync(inputStream, overwrite: true).ConfigureAwait(false);
         }
 
-        public async Task DeleteStorageAsync(string storagePath)
+        public async Task DeleteStorageAsync(string logicalPath)
         {
             // Get a reference to a blob
-            BlobClient blobClient = BlobContainerClient.GetBlobClient(storagePath);
+            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
             // Delete the blob
             await blobClient.DeleteAsync();
         }
 
         // Internal
 
-        private StorageInfo GetStorageInfo(string name, string path, BlobProperties blobProperties)
+        private StorageInfo GetStorageInfo(string name, string logicalPath, BlobProperties blobProperties)
         {
             StorageInfo storageInfo = new StorageInfo();
             storageInfo.IsFile = true;
             storageInfo.Name = name;
-            storageInfo.Path = path;
+            storageInfo.LogicalPath = logicalPath;
             storageInfo.Timestamp = blobProperties.LastModified.UtcDateTime;
             storageInfo.SizeBytes = blobProperties.ContentLength;
 

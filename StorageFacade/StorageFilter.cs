@@ -23,7 +23,7 @@ namespace Beztek.Facade.Storage
             {
                 foreach (string pattern in storageFilter.RegexPatterns)
                 {
-                    if (Regex.Match(storageInfo.Path, pattern).Success)
+                    if (Regex.Match(storageInfo.LogicalPath, pattern).Success)
                     {
                         isMatch = true;
                         break;
