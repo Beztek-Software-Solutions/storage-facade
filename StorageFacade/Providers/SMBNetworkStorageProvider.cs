@@ -18,18 +18,14 @@ namespace Beztek.Facade.Storage.Providers
     internal class SMBNetworkStorageProvider : IStorageProvider
     {
         private SMBNetworkStorageProviderConfig storageProviderConfig;
-
-        private SMB2Client _smbClient;
         private Dictionary<string, ISMBFileStore> fileStoreCache = new Dictionary<string, ISMBFileStore>();
+        private DateTime loggedInTime = DateTime.Now;
 
         internal SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig)
         {
             this.storageProviderConfig = smbNetworkStorageProviderConfig;
 
             SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)storageProviderConfig;
-
-            _smbClient = new SMB2Client();
-            GetAuthenticatedSmbClient();
         }
 
         public string GetName()
@@ -287,19 +283,27 @@ namespace Beztek.Facade.Storage.Providers
 
         // Internal
 
-        private SMB2Client GetAuthenticatedSmbClient()
+        private StorageInfo GetStorageInfo(string relativeParentPath, FileDirectoryInformation fileInfo)
         {
-            if (!_smbClient.IsConnected)
-            {
-                bool isConnected = _smbClient.Connect(storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
-                if (!isConnected)
-                    throw new Exception($"Unable to connect to '{storageProviderConfig.LogicalServer}'");
+            StorageInfo currStorageInfo = new StorageInfo();
+            currStorageInfo.IsFile = (fileInfo.FileAttributes & SMBLibrary.FileAttributes.Directory) != SMBLibrary.FileAttributes.Directory;
+            currStorageInfo.Name = fileInfo.FileName;
+            string parentFolderWindows = relativeParentPath.Replace(@"/", @"\");
+            if (parentFolderWindows.EndsWith(@"\"))
+                parentFolderWindows = parentFolderWindows.Substring(0, parentFolderWindows.Length - 1);
 
-                NTStatus status = _smbClient.Login(storageProviderConfig.Domain, storageProviderConfig.Username, storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
-                if (status != NTStatus.STATUS_SUCCESS)
-                    throw new Exception($"Unable to authenticate as '{storageProviderConfig.Username}' in domain '{storageProviderConfig.Domain}'");
+            if ("".Equals(parentFolderWindows))
+            {
+                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{fileInfo.FileName}";
             }
-            return _smbClient;
+            else
+            {
+                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{parentFolderWindows}\{fileInfo.FileName}";
+            }
+            currStorageInfo.Timestamp = fileInfo.LastWriteTime;
+            currStorageInfo.SizeBytes = fileInfo.Length;
+
+            return currStorageInfo;
         }
 
         private string GetPhysicalPath(string logicalPath)
@@ -341,10 +345,12 @@ namespace Beztek.Facade.Storage.Providers
 
         private ISMBFileStore GetFileStore(string shareName)
         {
+            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)storageProviderConfig;
             fileStoreCache.TryGetValue(shareName, out ISMBFileStore fileStore);
-            if ((!_smbClient.IsConnected) || fileStore == null)
+            // Refresh the file store if we exceed the smb refresh client interval
+            if (fileStore == null || DateTime.Compare(DateTime.Now, this.loggedInTime.AddSeconds(config.SmbRefreshClientIntervalSecs)) > 0)
             {
-                SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)storageProviderConfig;
+                this.loggedInTime = DateTime.Now;
                 NTStatus status;
                 fileStore = GetAuthenticatedSmbClient().TreeConnect(shareName, out status);
                 if (status != NTStatus.STATUS_SUCCESS)
@@ -355,27 +361,17 @@ namespace Beztek.Facade.Storage.Providers
             return fileStore;
         }
 
-        private StorageInfo GetStorageInfo(string relativeParentPath, FileDirectoryInformation fileInfo)
+        private SMB2Client GetAuthenticatedSmbClient()
         {
-            StorageInfo currStorageInfo = new StorageInfo();
-            currStorageInfo.IsFile = (fileInfo.FileAttributes & SMBLibrary.FileAttributes.Directory) != SMBLibrary.FileAttributes.Directory;
-            currStorageInfo.Name = fileInfo.FileName;
-            string parentFolderWindows = relativeParentPath.Replace(@"/", @"\");
-            if (parentFolderWindows.EndsWith(@"\"))
-                parentFolderWindows = parentFolderWindows.Substring(0, parentFolderWindows.Length - 1);
+            SMB2Client smbClient = new SMB2Client();
+                bool isConnected = smbClient.Connect(storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
+                if (!isConnected)
+                    throw new Exception($"Unable to connect to '{storageProviderConfig.LogicalServer}'");
 
-            if ("".Equals(parentFolderWindows))
-            {
-                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{fileInfo.FileName}";
-            }
-            else
-            {
-                currStorageInfo.LogicalPath = @$"\\{storageProviderConfig.LogicalServer}\{storageProviderConfig.ShareName}\{parentFolderWindows}\{fileInfo.FileName}";
-            }
-            currStorageInfo.Timestamp = fileInfo.LastWriteTime;
-            currStorageInfo.SizeBytes = fileInfo.Length;
-
-            return currStorageInfo;
+                NTStatus status = smbClient.Login(storageProviderConfig.Domain, storageProviderConfig.Username, storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
+                if (status != NTStatus.STATUS_SUCCESS)
+                    throw new Exception($"Unable to authenticate as '{storageProviderConfig.Username}' in domain '{storageProviderConfig.Domain}'");
+            return smbClient;
         }
     }
 }
