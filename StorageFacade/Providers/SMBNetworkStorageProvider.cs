@@ -118,6 +118,9 @@ namespace Beztek.Facade.Storage.Providers
                     throw new Exception($"Unable to get the directory handle {relativeParentPath} - {status}");
 
                 fileStore.QueryDirectory(out fileList, directoryHandle, @$"{fileName}", FileInformationClass.FileDirectoryInformation);
+                if (fileList == null || fileList.Count == 0)
+                    throw new Exception($"Unable to get the path to {relativeParentPath} - {status}");
+
                 return GetStorageInfo(relativeParentPath, (FileDirectoryInformation)fileList[0]);
             }
             finally
