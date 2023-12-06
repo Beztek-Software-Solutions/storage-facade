@@ -10,7 +10,6 @@ namespace Beztek.Facade.Storage.Providers
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
     using Beztek.Facade.Storage;
-    using SMBLibrary.Services;
 
     /// <summary>
     /// Implements the storage provider for Azure Blob Storage
@@ -24,8 +23,18 @@ namespace Beztek.Facade.Storage.Providers
         {
             this.azureBlobStorageProviderConfig = azureBlobStorageProviderConfig;
 
-            BlobServiceClient blobServiceClient = new BlobServiceClient(new Uri($"https://{azureBlobStorageProviderConfig.AccountName}.blob.core.windows.net"), new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccessKey));
-            this.blobContainerClient = blobServiceClient.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
+            BlobServiceClient blobServiceClient;
+            if (azureBlobStorageProviderConfig.AccountKey != null)
+            {
+                // Account Key and Account Name
+                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccountKey));
+            }
+            else
+            {
+                // SAS Token
+                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, null);
+            }
+            this.blobContainerClient = blobServiceClient!.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
         }
 
         public string GetName()

@@ -2,24 +2,23 @@
 
 namespace Beztek.Facade.Storage
 {
-    using System;
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
 
     /// <summary>
-    /// The Combo Storage Provider combines multiple SMBNetworkStores and the Local File Store to provide a seamless experience across SMB and mounted file stores
+    /// The Combo Storage Provider combines multiple stores and the Local File Store to provide a seamless experience across all file stores and mounted files
     /// </summary>
     public class ComboStorageFacade : IStorageFacade
     {
         private Dictionary<string, IStorageFacade> _storageProviders = new Dictionary<string, IStorageFacade>();
         private IStorageFacade _defaultStorageFacade;
 
-        public ComboStorageFacade(List<IStorageFacade> smbStorageFacades)
+        public ComboStorageFacade(List<IStorageFacade> storageFacades)
         {
-            foreach (IStorageFacade smbFacade in smbStorageFacades)
+            foreach (IStorageFacade storageFacade in storageFacades)
             {
-                _storageProviders[smbFacade.GetName()] = smbFacade;
+                _storageProviders[storageFacade.GetName()] = storageFacade;
             }
             _defaultStorageFacade = StorageFacadeFactory.GetStorageFacade(new FileStorageProviderConfig());
         }
@@ -67,10 +66,6 @@ namespace Beztek.Facade.Storage
             {
                 string key = entry.Key;
                 IStorageFacade value = entry.Value;
-                if (value.GetType() != StorageFacadeType.SMBNetworkStore)
-                {
-                    throw new ArgumentException("Combo storage facade can only have SMB Facades in the constructor");
-                }
                 if (logicalPath.ToLower().StartsWith(key))
                 {
                     return entry.Value;
