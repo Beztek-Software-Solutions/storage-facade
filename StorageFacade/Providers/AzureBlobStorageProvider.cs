@@ -90,7 +90,7 @@ namespace Beztek.Facade.Storage.Providers
             return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false)
         {
             // Get a reference to a blob
             BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);

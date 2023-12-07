@@ -51,7 +51,7 @@ namespace Beztek.Facade.Storage.Providers
                     out FileStatus fileStatus,
                     @$"{relativePath}",
                     AccessMask.GENERIC_READ,
-                    SMBLibrary.FileAttributes.Directory,
+                    FileAttributes.Directory,
                     ShareAccess.Read | ShareAccess.Write,
                     CreateDisposition.FILE_OPEN,
                     CreateOptions.FILE_DIRECTORY_FILE,
@@ -108,7 +108,7 @@ namespace Beztek.Facade.Storage.Providers
                     out FileStatus fileStatus,
                     @$"{relativeParentPath}",
                     AccessMask.GENERIC_READ,
-                    SMBLibrary.FileAttributes.Directory,
+                    FileAttributes.Directory,
                     ShareAccess.Read | ShareAccess.Write,
                     CreateDisposition.FILE_OPEN,
                     CreateOptions.FILE_DIRECTORY_FILE,
@@ -148,7 +148,7 @@ namespace Beztek.Facade.Storage.Providers
                     out FileStatus fileStatus,
                     relativePath,
                     AccessMask.GENERIC_READ,
-                    SMBLibrary.FileAttributes.Normal,
+                    FileAttributes.Normal,
                     ShareAccess.Read,
                     CreateDisposition.FILE_OPEN,
                     CreateOptions.FILE_NON_DIRECTORY_FILE,
@@ -184,14 +184,42 @@ namespace Beztek.Facade.Storage.Providers
             }
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            string relativePath = GetRelativePath(logicalPath);
             ISMBFileStore fileStore = GetFileStore(@$"{storageProviderConfig.ShareName}");
             object fileHandle = null;
-
             try
             {
+                string relativePath = GetRelativePath(logicalPath);
+                
+                // Create parent directory hierarchy if it doesn't exist
+                if (createParentDirectories)
+                {
+                    string[] paths = relativePath.Split(@"\");
+                    if (paths.Length > 1)
+                    {
+                        int index = 0;
+                        StringBuilder sb = new StringBuilder();
+                        while (index < paths.Length - 1)
+                        {
+                            if (index > 0) sb.Append(@"\");
+                            sb.Append(paths[index]);
+                            NTStatus status = fileStore.CreateFile(
+                                out fileHandle,
+                                out FileStatus fileStatus,
+                                sb.ToString(),
+                                AccessMask.SYNCHRONIZE | (AccessMask)DirectoryAccessMask.GENERIC_READ | (AccessMask)DirectoryAccessMask.DELETE,
+                                FileAttributes.Normal,
+                                ShareAccess.Read | ShareAccess.Delete,
+                                CreateDisposition.FILE_OPEN | CreateDisposition.FILE_CREATE,
+                                CreateOptions.FILE_SYNCHRONOUS_IO_NONALERT | CreateOptions.FILE_DIRECTORY_FILE, null);
+
+                            index++;
+                        }
+                    }
+                }
+
+                // Now write the file
                 await Task.Run(() =>
                 {
                     NTStatus status = fileStore.CreateFile(
@@ -199,7 +227,7 @@ namespace Beztek.Facade.Storage.Providers
                            out FileStatus fileStatus,
                            relativePath,
                            AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE,
-                           SMBLibrary.FileAttributes.Normal,
+                           FileAttributes.Normal,
                            ShareAccess.None,
                            CreateDisposition.FILE_OVERWRITE_IF,
                            CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT,
@@ -367,13 +395,13 @@ namespace Beztek.Facade.Storage.Providers
         private SMB2Client GetAuthenticatedSmbClient()
         {
             SMB2Client smbClient = new SMB2Client();
-                bool isConnected = smbClient.Connect(storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
-                if (!isConnected)
-                    throw new Exception($"Unable to connect to '{storageProviderConfig.LogicalServer}'");
+            bool isConnected = smbClient.Connect(storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
+            if (!isConnected)
+                throw new Exception($"Unable to connect to '{storageProviderConfig.LogicalServer}'");
 
-                NTStatus status = smbClient.Login(storageProviderConfig.Domain, storageProviderConfig.Username, storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
-                if (status != NTStatus.STATUS_SUCCESS)
-                    throw new Exception($"Unable to authenticate as '{storageProviderConfig.Username}' in domain '{storageProviderConfig.Domain}'");
+            NTStatus status = smbClient.Login(storageProviderConfig.Domain, storageProviderConfig.Username, storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
+            if (status != NTStatus.STATUS_SUCCESS)
+                throw new Exception($"Unable to authenticate as '{storageProviderConfig.Username}' in domain '{storageProviderConfig.Domain}'");
             return smbClient;
         }
     }

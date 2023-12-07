@@ -21,7 +21,7 @@ namespace Beztek.Facade.Storage
 
         Task<Stream> ReadStorageAsync(StorageInfo storageInfo);
 
-        Task WriteStorageAsync(string storagePath, Stream inputStream);
+        Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false);
 
         Task DeleteStorageAsync(string storagePath);
     }

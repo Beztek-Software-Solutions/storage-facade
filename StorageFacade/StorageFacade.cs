@@ -45,9 +45,9 @@ namespace Beztek.Facade.Storage
             return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream)
+        public async Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false)
         {
-            await storageProvider.WriteStorageAsync(storagePath, inputStream).ConfigureAwait(false);
+            await storageProvider.WriteStorageAsync(storagePath, inputStream, createParentDirectories).ConfigureAwait(false);
         }
 
         public async Task DeleteStorageAsync(string storagePath)

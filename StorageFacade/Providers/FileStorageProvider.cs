@@ -5,6 +5,7 @@ namespace Beztek.Facade.Storage.Providers
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
+    using SMBLibrary.Services;
 
     /// <summary>
     /// Implements the storage provider for the local filesystem
@@ -66,8 +67,15 @@ namespace Beztek.Facade.Storage.Providers
             return await Task.FromResult(File.OpenRead(storageInfo.LogicalPath)).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
+            // Create the parent directory hierarchy if it does not exist
+            if (createParentDirectories)
+            {
+                string parent = Directory.GetParent(logicalPath).FullName;
+                Directory.CreateDirectory(parent);
+            }
+
             using (FileStream fileStream = File.Create(logicalPath))
             {
                 inputStream.Seek(0, SeekOrigin.Begin);
@@ -77,7 +85,8 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
-            await Task.Run(() => {
+            await Task.Run(() =>
+            {
                 File.Delete(logicalPath);
             });
         }

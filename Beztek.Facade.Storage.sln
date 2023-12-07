@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Beztek.Facade.Storage", "StorageFacade\Beztek.Facade.Storage.csproj", "{D85AD9CC-B8DD-41C5-ABFC-3487E7697B3D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Beztek.Facade.Storage.Tests", "StorageFacade.Tests\Beztek.Facade.Storage.Tests.csproj", "{06CFB023-FD6A-4AE3-B546-83FA292D1D5B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{D85AD9CC-B8DD-41C5-ABFC-3487E7697B3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D85AD9CC-B8DD-41C5-ABFC-3487E7697B3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D85AD9CC-B8DD-41C5-ABFC-3487E7697B3D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06CFB023-FD6A-4AE3-B546-83FA292D1D5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06CFB023-FD6A-4AE3-B546-83FA292D1D5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06CFB023-FD6A-4AE3-B546-83FA292D1D5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06CFB023-FD6A-4AE3-B546-83FA292D1D5B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
