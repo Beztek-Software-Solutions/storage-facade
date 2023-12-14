@@ -39,7 +39,7 @@ namespace Beztek.Facade.Storage
             this.BlobUri = blobUri;
             this.AccountName = GetAccountNameFromBlobUri(blobUri);
             this.ContainerName = containerName;
-            this.Name = $"{BlobUri.ToString()}/{containerName}".ToLower();
+            this.Name = $"{BlobUri.ToString().Split("?")[0]}/{containerName}".ToLower();
         }
 
         // Internal
