@@ -81,7 +81,17 @@ namespace Beztek.Facade.Storage.Providers
                 foreach (BlobItem blobItem in blobContainerClient.GetBlobs(default, default, prefix).AsEnumerable())
                 {
                     if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
-                        continue;
+                    {
+                        // Continue processing only if listing recursively
+                        if (isRecursive)
+                        {
+                            continue;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
 
                     BlobProperties blobProperties = blobContainerClient.GetBlobClient(blobItem.Name).GetProperties();
                     string path = blobItem.Name;
