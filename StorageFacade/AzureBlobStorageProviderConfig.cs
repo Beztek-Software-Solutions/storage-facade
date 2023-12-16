@@ -5,6 +5,7 @@ namespace Beztek.Facade.Storage
     using System;
     using System.Collections.Generic;
     using System.Threading.Tasks;
+    using Azure.Storage;
 
     /// <summary>
     /// Implements the storage provider configuration for Azure Blob Storage
@@ -23,30 +24,46 @@ namespace Beztek.Facade.Storage
 
         internal string ContainerName { get; }
 
-        public AzureBlobStorageProviderConfig(string accountName, string accountKey, string containerName)
+        internal bool IsHierarchicalNamespace { get; }
+
+        public AzureBlobStorageProviderConfig(string accountName, string accountKey, string containerName, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
-            this.BlobUri = new Uri($"https://{accountName}.storage.core.windows.net");
             this.AccountName = accountName;
             this.AccountKey = accountKey;
             this.ContainerName = containerName;
-            this.Name = $"{BlobUri.ToString()}/{containerName}".ToLower();
+            this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
+            this.BlobUri = new Uri(this.Name);
+            this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
-        public AzureBlobStorageProviderConfig(Uri blobUri, string containerName)
+        /// <summary>
+        /// Creates a configuration object for Azure Blob Storage Provider
+        /// </summary>
+        /// <param name="blobUri">of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken></param>
+        /// <param name="containerName">See the format of the blob url above. The container name is a part of the blob url</param>
+        public AzureBlobStorageProviderConfig(Uri blobUri, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
             this.BlobUri = blobUri;
             this.AccountName = GetAccountNameFromBlobUri(blobUri);
-            this.ContainerName = containerName;
-            this.Name = $"{BlobUri.ToString().Split("?")[0]}/{containerName}".ToLower();
+            this.ContainerName = GetContainerNameFromBlobUri(blobUri);
+            this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
+            this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
         // Internal
 
+        // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
         private string GetAccountNameFromBlobUri(Uri blobUri)
         {
-            return "";
+            return blobUri.ToString().Split("?")[0].Split("/")[^3].Split(".")[0];
+        }
+        
+        // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
+        private string GetContainerNameFromBlobUri(Uri blobUri)
+        {
+            return blobUri.ToString().Split("?")[0].Split("/")[^2];
         }
     }
 }

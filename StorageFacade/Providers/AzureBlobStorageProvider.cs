@@ -5,7 +5,9 @@ namespace Beztek.Facade.Storage.Providers
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Threading.Tasks;
+    using Azure;
     using Azure.Storage;
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
@@ -32,7 +34,7 @@ namespace Beztek.Facade.Storage.Providers
             else
             {
                 // SAS Token
-                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, null);
+                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri);
             }
             this.blobContainerClient = blobServiceClient!.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
         }
@@ -49,32 +51,53 @@ namespace Beztek.Facade.Storage.Providers
 
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
         {
-            foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: logicalPath, delimiter: "/"))
+            if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
             {
-                if (blobOrFolder.IsBlob)
+                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: $"{GetRelativePath(logicalPath)}/", delimiter: "/"))
                 {
-                    BlobProperties blobProperties = blobContainerClient.GetBlobClient(blobOrFolder.Blob.Name).GetProperties();
-                    string path = blobOrFolder.Blob.Name;
+                    if (blobOrFolder.IsBlob)
+                    {
+                        BlobProperties blobProperties = blobContainerClient.GetBlobClient($"/{blobOrFolder.Blob.Name}").GetProperties();
+                        string path = blobOrFolder.Blob.Name;
+                        string[] paths = path.Split("/");
+                        string name = paths[paths.Length - 1];
+                        StorageInfo storageInfo = GetStorageInfo(name, path, blobProperties);
+                        if (StorageFilter.IsMatch(storageFilter, storageInfo))
+                            yield return storageInfo;
+                    }
+                    else if (isRecursive)
+                    {
+                        foreach (StorageInfo storageInfo in EnumerateStorageInfo(blobOrFolder.Prefix, true, storageFilter))
+                        {
+                            yield return storageInfo;
+                        }
+                    }
+                }
+                yield break;
+            }
+            else
+            {
+                string prefix = $"{GetRelativePath(logicalPath)}/";
+                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(default, default, prefix).AsEnumerable())
+                {
+                    if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
+                        continue;
+
+                    BlobProperties blobProperties = blobContainerClient.GetBlobClient(blobItem.Name).GetProperties();
+                    string path = blobItem.Name;
                     string[] paths = path.Split("/");
                     string name = paths[paths.Length - 1];
                     StorageInfo storageInfo = GetStorageInfo(name, path, blobProperties);
                     if (StorageFilter.IsMatch(storageFilter, storageInfo))
                         yield return storageInfo;
                 }
-                else if (isRecursive)
-                {
-                    foreach (StorageInfo storageInfo in EnumerateStorageInfo(blobOrFolder.Prefix, true, storageFilter))
-                    {
-                        yield return storageInfo;
-                    }
-                }
+                yield break;
             }
-            yield break;
         }
 
         public StorageInfo GetStorageInfo(string logicalPath)
         {
-            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
+            BlobClient blobClient = GetBlobClient(logicalPath);
             BlobProperties blobProperties = blobClient.GetProperties();
 
             return GetStorageInfo(logicalPath, logicalPath, blobProperties);
@@ -82,7 +105,7 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            BlobClient blobClient = blobContainerClient.GetBlobClient(storageInfo.Name);
+            BlobClient blobClient = GetBlobClient(storageInfo.Name);
             if (!await blobClient.ExistsAsync())
                 throw new Exception($"Unable to find {storageInfo.Name}");
 
@@ -90,10 +113,10 @@ namespace Beztek.Facade.Storage.Providers
             return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
             // Get a reference to a blob
-            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
+            BlobClient blobClient = GetBlobClient(logicalPath);
             // Upload data from the local file
             await blobClient.UploadAsync(inputStream, overwrite: true).ConfigureAwait(false);
         }
@@ -101,7 +124,7 @@ namespace Beztek.Facade.Storage.Providers
         public async Task DeleteStorageAsync(string logicalPath)
         {
             // Get a reference to a blob
-            BlobClient blobClient = blobContainerClient.GetBlobClient(logicalPath);
+            BlobClient blobClient = GetBlobClient(logicalPath);
             // Delete the blob
             await blobClient.DeleteAsync();
         }
@@ -119,5 +142,22 @@ namespace Beztek.Facade.Storage.Providers
 
             return storageInfo;
         }
+
+        // This returns the blob client from rom the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
+        private BlobClient GetBlobClient(string logicalPath)
+        {
+            return blobContainerClient.GetBlobClient($"/{GetRelativePath(logicalPath)}");
+        }
+
+        // This returns the relative path from the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
+        private string GetRelativePath(string logicalPath)
+        {
+            int prefixLength = GetName().Length + 1;
+            return logicalPath[prefixLength..];
+        }
+    }
+
+    internal class ResultContinuation
+    {
     }
 }
