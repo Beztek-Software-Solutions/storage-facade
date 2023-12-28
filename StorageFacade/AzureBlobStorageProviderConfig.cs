@@ -33,7 +33,7 @@ namespace Beztek.Facade.Storage
             this.AccountKey = accountKey;
             this.ContainerName = containerName;
             this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
-            this.BlobUri = new Uri(this.Name);
+            this.BlobUri = new Uri( $"https://{this.AccountName}.blob.core.windows.net");
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
@@ -45,10 +45,10 @@ namespace Beztek.Facade.Storage
         public AzureBlobStorageProviderConfig(Uri blobUri, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
-            this.BlobUri = blobUri;
             this.AccountName = GetAccountNameFromBlobUri(blobUri);
             this.ContainerName = GetContainerNameFromBlobUri(blobUri);
             this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
+            this.BlobUri = new Uri( $"https://{this.AccountName}.blob.core.windows.net");
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 

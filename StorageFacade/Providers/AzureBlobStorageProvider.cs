@@ -51,9 +51,12 @@ namespace Beztek.Facade.Storage.Providers
 
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
         {
+
+            string prefix = $"{GetRelativePath(logicalPath)}/";
+            if ("/".Equals(prefix)) prefix = "";
             if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
             {
-                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: $"{GetRelativePath(logicalPath)}/", delimiter: "/"))
+                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: prefix, delimiter: "/"))
                 {
                     if (blobOrFolder.IsBlob)
                     {
@@ -77,19 +80,14 @@ namespace Beztek.Facade.Storage.Providers
             }
             else
             {
-                string prefix = $"{GetRelativePath(logicalPath)}/";
-                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(default, default, prefix).AsEnumerable())
+                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.All, BlobStates.All, prefix).AsEnumerable())
                 {
                     if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
                     {
-                        // Continue processing only if listing recursively
-                        if (isRecursive)
+                        if (!isRecursive)
                         {
+                            // Continue processing only if listing recursively
                             continue;
-                        }
-                        else
-                        {
-                            break;
                         }
                     }
 
@@ -109,15 +107,15 @@ namespace Beztek.Facade.Storage.Providers
         {
             BlobClient blobClient = GetBlobClient(logicalPath);
             BlobProperties blobProperties = blobClient.GetProperties();
-
-            return GetStorageInfo(logicalPath, logicalPath, blobProperties);
+            string name = GetNameFromLogicalPath(logicalPath);
+            return GetStorageInfo(name, logicalPath, blobProperties);
         }
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            BlobClient blobClient = GetBlobClient(storageInfo.Name);
+            BlobClient blobClient = GetBlobClient(storageInfo.LogicalPath);
             if (!await blobClient.ExistsAsync())
-                throw new Exception($"Unable to find {storageInfo.Name}");
+                throw new Exception($"Unable to find {storageInfo.LogicalPath}");
 
             var response = await blobClient.DownloadAsync();
             return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
@@ -153,21 +151,28 @@ namespace Beztek.Facade.Storage.Providers
             return storageInfo;
         }
 
+        private string GetNameFromLogicalPath(string logicalPath)
+        {
+            int index = logicalPath.LastIndexOf("/")+1;
+            return logicalPath[index..];
+        }
+
         // This returns the blob client from rom the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
         private BlobClient GetBlobClient(string logicalPath)
         {
-            return blobContainerClient.GetBlobClient($"/{GetRelativePath(logicalPath)}");
+            return blobContainerClient.GetBlobClient($"{GetRelativePath(logicalPath)}");
         }
 
         // This returns the relative path from the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
         private string GetRelativePath(string logicalPath)
         {
-            int prefixLength = GetName().Length + 1;
-            return logicalPath[prefixLength..];
+            if (!logicalPath.EndsWith("/")) logicalPath = $"{logicalPath}/";
+            int uriLength = GetName().Length;
+            int logicalPathLength = logicalPath.Length;
+            string currPath = logicalPath.Substring(uriLength + 1, logicalPathLength - uriLength - 1);
+            if (currPath.StartsWith("/")) currPath = currPath[1..];
+            if (currPath.EndsWith("/")) currPath = currPath[..^1];
+            return currPath;
         }
-    }
-
-    internal class ResultContinuation
-    {
     }
 }
