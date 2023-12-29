@@ -45,10 +45,11 @@ namespace Beztek.Facade.Storage
         public AzureBlobStorageProviderConfig(Uri blobUri, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
+            this.BlobUri = blobUri;
             this.AccountName = GetAccountNameFromBlobUri(blobUri);
             this.ContainerName = GetContainerNameFromBlobUri(blobUri);
+            string SASToken = this.GetSASTokenFromBlobUri(blobUri);
             this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
-            this.BlobUri = new Uri( $"https://{this.AccountName}.blob.core.windows.net");
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
@@ -57,13 +58,19 @@ namespace Beztek.Facade.Storage
         // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
         private string GetAccountNameFromBlobUri(Uri blobUri)
         {
-            return blobUri.ToString().Split("?")[0].Split("/")[^3].Split(".")[0];
+            return blobUri.ToString().Split("?")[0].Split("/")[2].Split(".")[0];
         }
         
         // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
         private string GetContainerNameFromBlobUri(Uri blobUri)
         {
-            return blobUri.ToString().Split("?")[0].Split("/")[^2];
+            return blobUri.ToString().Split("?")[0].Split("/")[3];
+        }
+        
+        // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
+        private string GetSASTokenFromBlobUri(Uri blobUri)
+        {
+            return blobUri.ToString().Split("?")[1];
         }
     }
 }

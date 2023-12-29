@@ -25,18 +25,17 @@ namespace Beztek.Facade.Storage.Providers
         {
             this.azureBlobStorageProviderConfig = azureBlobStorageProviderConfig;
 
-            BlobServiceClient blobServiceClient;
             if (azureBlobStorageProviderConfig.AccountKey != null)
             {
                 // Account Key and Account Name
-                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccountKey));
+                BlobServiceClient blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccountKey));
+                this.blobContainerClient = blobServiceClient!.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
             }
             else
             {
                 // SAS Token
-                blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri);
+                this.blobContainerClient = new BlobContainerClient(azureBlobStorageProviderConfig.BlobUri);
             }
-            this.blobContainerClient = blobServiceClient!.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
         }
 
         public string GetName()
@@ -80,7 +79,7 @@ namespace Beztek.Facade.Storage.Providers
             }
             else
             {
-                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.All, BlobStates.All, prefix).AsEnumerable())
+                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.None, BlobStates.None, prefix).AsEnumerable())
                 {
                     if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
                     {
