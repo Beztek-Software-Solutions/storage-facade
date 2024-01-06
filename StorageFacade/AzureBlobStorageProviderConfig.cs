@@ -33,7 +33,7 @@ namespace Beztek.Facade.Storage
             this.AccountKey = accountKey;
             this.ContainerName = containerName;
             this.Name = $"https://{domainName}/{this.ContainerName}".ToLower();
-            this.BlobUri = new Uri( $"https://{this.AccountName}.blob.core.windows.net");
+            this.BlobUri = new Uri( $"https://{domainName}".ToLower());
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
