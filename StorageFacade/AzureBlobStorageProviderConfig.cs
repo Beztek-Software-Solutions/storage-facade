@@ -26,13 +26,13 @@ namespace Beztek.Facade.Storage
 
         internal bool IsHierarchicalNamespace { get; }
 
-        public AzureBlobStorageProviderConfig(string accountName, string accountKey, string containerName, bool isHierarchicalNamespace = false)
+        public AzureBlobStorageProviderConfig(string domainName, string accountKey, string containerName, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
-            this.AccountName = accountName;
+            this.AccountName = domainName.Split(".")[0];
             this.AccountKey = accountKey;
             this.ContainerName = containerName;
-            this.Name = $"https://{this.AccountName}.blob.core.windows.net/{this.ContainerName}".ToLower();
+            this.Name = $"https://{domainName}/{this.ContainerName}".ToLower();
             this.BlobUri = new Uri( $"https://{this.AccountName}.blob.core.windows.net");
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }

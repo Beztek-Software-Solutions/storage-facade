@@ -63,7 +63,7 @@ namespace Beztek.Facade.Storage.Providers
                         string path = blobOrFolder.Blob.Name;
                         string[] paths = path.Split("/");
                         string name = paths[paths.Length - 1];
-                        StorageInfo storageInfo = GetStorageInfo(name, path, blobProperties);
+                        StorageInfo storageInfo = GetStorageInfo(name, $"{GetName()}/{path}", blobProperties);
                         if (StorageFilter.IsMatch(storageFilter, storageInfo))
                             yield return storageInfo;
                     }
@@ -94,7 +94,7 @@ namespace Beztek.Facade.Storage.Providers
                     string path = blobItem.Name;
                     string[] paths = path.Split("/");
                     string name = paths[paths.Length - 1];
-                    StorageInfo storageInfo = GetStorageInfo(name, path, blobProperties);
+                    StorageInfo storageInfo = GetStorageInfo(name, $"{GetName()}/{path}", blobProperties);
                     if (StorageFilter.IsMatch(storageFilter, storageInfo))
                         yield return storageInfo;
                 }
