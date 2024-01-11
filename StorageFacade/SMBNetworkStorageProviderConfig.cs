@@ -12,7 +12,7 @@ namespace Beztek.Facade.Storage
         internal string Domain { get; }
         internal string Username { get; }
         internal string Password { get; }
-        internal int SmbRefreshClientIntervalSecs;
+        internal int SmbIdleTimeoutSeconds { get; }
 
         /// <summary>
         /// Constructor for SMB Network storage. This has a "poor-man's" implementation for DFS. Although the underlying SMBLibrary does not provide
@@ -28,9 +28,9 @@ namespace Beztek.Facade.Storage
         /// <param name="domain">is the domain for the logical server</param>
         /// <param name="username">is the username for auth</param>
         /// <param name="password">is the password for auth</param>
-        /// <param name="smbRefreshClientIntervalSecs">is the time in seconds after which the client will be refershed (re-authenticated). Default is 900 seconds</param>
         /// <param name="physicalServer">provides the mapping behind DFS shares if relevant</param>
-        public SMBNetworkStorageProviderConfig(string logicalServer, string shareName, string domain, string username, string password, string physicalServer = null, int smbRefreshClientIntervalSecs = 900)
+        /// <param name="smbIdleTimeoutSeconds">is the idle time in seconds after which the client will be refreshed (re-authenticated). Default is 899 seconds, to work in concert with the 15 minutes default disconnect</param>
+        public SMBNetworkStorageProviderConfig(string logicalServer, string shareName, string domain, string username, string password, string physicalServer = null, int smbIdleTimeoutSeconds = 899)
         {
             this.LogicalServer = logicalServer.ToLower();
             this.PhysicalServer = physicalServer == null ? logicalServer : physicalServer.ToLower();
@@ -39,7 +39,7 @@ namespace Beztek.Facade.Storage
             this.Domain = domain.ToLower();
             this.Username = username;
             this.Password = password;
-            this.SmbRefreshClientIntervalSecs = smbRefreshClientIntervalSecs;
+            this.SmbIdleTimeoutSeconds = smbIdleTimeoutSeconds;
         }
     }
 }
