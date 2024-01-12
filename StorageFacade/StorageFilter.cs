@@ -16,6 +16,10 @@ namespace Beztek.Facade.Storage
 
         public static bool IsMatch(StorageFilter storageFilter, StorageInfo storageInfo)
         {
+            // Nothing to match if there is no storage filter. so return success.
+            if (storageFilter == null)
+                return true;
+
             bool isMatch = true;
 
             // Match Regex Patterns
