@@ -18,8 +18,6 @@ namespace Beztek.Facade.Storage.Providers
     internal class SMBNetworkStorageProvider : IStorageProvider
     {
         private SMBNetworkStorageProviderConfig _storageProviderConfig;
-        ISMBFileStore _fileStore;
-        private DateTime _lastAccessTime = DateTime.Now.AddDays(-1000);
 
         internal SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig)
         {
@@ -58,9 +56,6 @@ namespace Beztek.Facade.Storage.Providers
                 if (status != NTStatus.STATUS_SUCCESS)
                     throw new Exception($"Unable to get the directory handle {logicalPath} - {status} (tried {GetPhysicalPath(logicalPath)})");
 
-                // Update the last access timestmap of the client
-                _lastAccessTime = DateTime.Now;
-
                 fileStore.QueryDirectory(out List<QueryDirectoryFileInformation> fileList, directoryHandle, @"*", FileInformationClass.FileDirectoryInformation);
 
                 foreach (FileDirectoryInformation fileInfo in fileList)
@@ -88,6 +83,8 @@ namespace Beztek.Facade.Storage.Providers
                 // Close the directory handle
                 if (directoryHandle != null)
                     fileStore.CloseFile(directoryHandle);
+
+                fileStore.Disconnect();
             }
         }
 
@@ -118,9 +115,6 @@ namespace Beztek.Facade.Storage.Providers
                 if (status != NTStatus.STATUS_SUCCESS)
                     throw new Exception($"Unable to get the directory handle {relativeParentPath} - {status}");
 
-                // Update the last access timestmap of the client
-                _lastAccessTime = DateTime.Now;
-
                 fileStore.QueryDirectory(out fileList, directoryHandle, @$"{fileName}", FileInformationClass.FileDirectoryInformation);
                 if (fileList == null || fileList.Count == 0)
                     throw new Exception($"Unable to get the path to {relativeParentPath} - {status}");
@@ -132,6 +126,8 @@ namespace Beztek.Facade.Storage.Providers
                 // Close the directory handle
                 if (directoryHandle != null)
                     fileStore.CloseFile(directoryHandle);
+
+                fileStore.Disconnect();
             }
         }
 
@@ -162,9 +158,6 @@ namespace Beztek.Facade.Storage.Providers
                 if (fileStatus != FileStatus.FILE_OPENED)
                     throw new Exception($"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}");
 
-                // Update the last access timestmap of the client
-                _lastAccessTime = DateTime.Now;
-
                 // Read file into MemoryStream
                 MemoryStream ms = new MemoryStream();
                 long offset = 0;
@@ -188,6 +181,8 @@ namespace Beztek.Facade.Storage.Providers
                 // Close the file handle
                 if (fileHandle != null)
                     fileStore.CloseFile(fileHandle);
+
+                fileStore.Disconnect();
             }
         }
 
@@ -198,7 +193,7 @@ namespace Beztek.Facade.Storage.Providers
             try
             {
                 string relativePath = GetRelativePath(logicalPath);
-                
+
                 // Create parent directory hierarchy if it doesn't exist
                 if (createParentDirectories)
                 {
@@ -241,9 +236,6 @@ namespace Beztek.Facade.Storage.Providers
                            null);
                     if (status == NTStatus.STATUS_SUCCESS)
                     {
-                        // Update the last access timestmap of the client
-                        _lastAccessTime = DateTime.Now;
-
                         byte[] buffer = new byte[64 * 1024];
 
                         int len;
@@ -274,6 +266,8 @@ namespace Beztek.Facade.Storage.Providers
                 // Close the file handle
                 if (fileHandle != null)
                     fileStore.CloseFile(fileHandle);
+
+                fileStore.Disconnect();
             }
         }
 
@@ -301,9 +295,6 @@ namespace Beztek.Facade.Storage.Providers
                         if (status != NTStatus.STATUS_SUCCESS)
                             throw new Exception($"Unable to delete {logicalPath} - {status}");
 
-                        // Update the last access timestmap of the client
-                        _lastAccessTime = DateTime.Now;
-
                         FileDispositionInformation fileDispositionInformation = new FileDispositionInformation();
                         fileDispositionInformation.DeletePending = true;
                         status = fileStore.SetFileInformation(fileHandle, fileDispositionInformation);
@@ -323,6 +314,8 @@ namespace Beztek.Facade.Storage.Providers
                 // Close the file handle
                 if (fileHandle != null)
                     fileStore.CloseFile(fileHandle);
+
+                fileStore.Disconnect();
             }
         }
 
@@ -390,18 +383,11 @@ namespace Beztek.Facade.Storage.Providers
 
         private ISMBFileStore GetFileStore(string shareName)
         {
-            SMBNetworkStorageProviderConfig config = (SMBNetworkStorageProviderConfig)_storageProviderConfig;
-            // Refresh the file store if we exceed the smb refresh client interval
-            if (_fileStore == null || DateTime.Compare(DateTime.Now, this._lastAccessTime.AddSeconds(config.SmbIdleTimeoutSeconds)) > 0)
-            {
-                this._lastAccessTime = DateTime.Now;
-                ISMBFileStore tmpFileStore = GetAuthenticatedSmbClient().TreeConnect(shareName, out NTStatus status);
-                if (status != NTStatus.STATUS_SUCCESS)
-                    throw new Exception($"Unable to load the file share '{shareName}': {status}");
+            ISMBFileStore fileStore = GetAuthenticatedSmbClient().TreeConnect(shareName, out NTStatus status);
+            if (status != NTStatus.STATUS_SUCCESS)
+                throw new Exception($"Unable to load the file share '{shareName}': {status}");
 
-                _fileStore = tmpFileStore;
-            }
-            return _fileStore;
+            return fileStore;
         }
 
         private SMB2Client GetAuthenticatedSmbClient()
@@ -414,7 +400,7 @@ namespace Beztek.Facade.Storage.Providers
             NTStatus status = smbClient.Login(_storageProviderConfig.Domain, _storageProviderConfig.Username, _storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
             if (status != NTStatus.STATUS_SUCCESS)
                 throw new Exception($"Unable to authenticate as '{_storageProviderConfig.Username}' in domain '{_storageProviderConfig.Domain}'");
-            
+
             return smbClient;
         }
     }
