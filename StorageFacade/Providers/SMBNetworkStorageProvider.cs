@@ -338,7 +338,9 @@ namespace Beztek.Facade.Storage.Providers
             {
                 currStorageInfo.LogicalPath = @$"\\{_storageProviderConfig.LogicalServer}\{_storageProviderConfig.ShareName}\{parentFolderWindows}\{fileInfo.FileName}";
             }
-            currStorageInfo.Timestamp = fileInfo.LastWriteTime;
+            DateTime lastUpdated = fileInfo.LastWriteTime;
+            DateTime created = fileInfo.CreationTime;
+            currStorageInfo.Timestamp = (lastUpdated.CompareTo(created) >= 0) ? lastUpdated : created;
             currStorageInfo.SizeBytes = fileInfo.Length;
 
             return currStorageInfo;
