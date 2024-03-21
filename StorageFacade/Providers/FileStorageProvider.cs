@@ -78,8 +78,10 @@ namespace Beztek.Facade.Storage.Providers
 
             using (FileStream fileStream = File.Create(logicalPath))
             {
-                inputStream.Seek(0, SeekOrigin.Begin);
                 await inputStream.CopyToAsync(fileStream).ConfigureAwait(false);
+                fileStream.Flush();
+                fileStream.Close();
+                fileStream.Dispose();
             }
         }
 
