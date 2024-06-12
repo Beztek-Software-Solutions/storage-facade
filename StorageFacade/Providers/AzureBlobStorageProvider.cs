@@ -50,13 +50,13 @@ namespace Beztek.Facade.Storage.Providers
 
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
         {
-
             string prefix = $"{GetRelativePath(logicalPath)}/";
             if ("/".Equals(prefix)) prefix = "";
             if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
             {
-                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: prefix, delimiter: "/"))
+                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: prefix, delimiter: "/").AsEnumerable())
                 {
+                    // A hierarchical listing may return both virtual directories and blobs.
                     if (blobOrFolder.IsBlob)
                     {
                         BlobProperties blobProperties = blobContainerClient.GetBlobClient($"/{blobOrFolder.Blob.Name}").GetProperties();
@@ -152,7 +152,7 @@ namespace Beztek.Facade.Storage.Providers
 
         private string GetNameFromLogicalPath(string logicalPath)
         {
-            int index = logicalPath.LastIndexOf("/")+1;
+            int index = logicalPath.LastIndexOf("/") + 1;
             return logicalPath[index..];
         }
 
