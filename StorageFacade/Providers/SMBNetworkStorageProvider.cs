@@ -341,7 +341,7 @@ namespace Beztek.Facade.Storage.Providers
             DateTime lastUpdated = fileInfo.LastWriteTime;
             DateTime created = fileInfo.CreationTime;
             currStorageInfo.Timestamp = (lastUpdated.CompareTo(created) >= 0) ? lastUpdated : created;
-            currStorageInfo.SizeBytes = fileInfo.Length;
+            currStorageInfo.SizeBytes = fileInfo.AllocationSize;
 
             return currStorageInfo;
         }
