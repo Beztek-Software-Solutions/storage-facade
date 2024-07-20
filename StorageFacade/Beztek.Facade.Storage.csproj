@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net7.0</TargetFramework>
     <id>Beztek.Facade.Storage</id>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <authors>Peter Thomas</authors>
     <owners>Beztek Software Solutions</owners>
     <licenseUrl>https://github.com/Beztek-Software-Solutions/storage-facade/blob/main/LICENSE</licenseUrl>
@@ -17,10 +17,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.19.1" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.21.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
     <PackageReference Include="MimeTypeMapOfficial" Version="1.0.17" />
-    <PackageReference Include="SMBLibrary" Version="1.5.2" />
+    <PackageReference Include="SMBLibrary" Version="1.5.3" />
   </ItemGroup>
 
   <ItemGroup>

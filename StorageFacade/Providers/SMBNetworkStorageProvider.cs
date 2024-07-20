@@ -36,7 +36,8 @@ namespace Beztek.Facade.Storage.Providers
 
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
         {
-            ISMBFileStore fileStore = GetFileStore(@$"{_storageProviderConfig.ShareName}");
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
             string relativePath = GetRelativePath(logicalPath);
             object directoryHandle = null;
 
@@ -85,6 +86,7 @@ namespace Beztek.Facade.Storage.Providers
                     fileStore.CloseFile(directoryHandle);
 
                 fileStore.Disconnect();
+                smbClient.Disconnect();
             }
         }
 
@@ -92,7 +94,8 @@ namespace Beztek.Facade.Storage.Providers
         {
             List<QueryDirectoryFileInformation> fileList;
 
-            ISMBFileStore fileStore = GetFileStore(@$"{_storageProviderConfig.ShareName}");
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
 
             string relativePath = GetRelativePath(logicalPath);
             string fileName = getFileName(logicalPath);
@@ -128,12 +131,14 @@ namespace Beztek.Facade.Storage.Providers
                     fileStore.CloseFile(directoryHandle);
 
                 fileStore.Disconnect();
+                smbClient.Disconnect();
             }
         }
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            ISMBFileStore fileStore = GetFileStore(@$"{_storageProviderConfig.ShareName}");
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
 
             string relativePath = GetRelativePath(storageInfo.LogicalPath);
             string fileName = getFileName(storageInfo.LogicalPath);
@@ -183,12 +188,14 @@ namespace Beztek.Facade.Storage.Providers
                     fileStore.CloseFile(fileHandle);
 
                 fileStore.Disconnect();
+                smbClient.Disconnect();
             }
         }
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            ISMBFileStore fileStore = GetFileStore(@$"{_storageProviderConfig.ShareName}");
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
             object fileHandle = null;
             try
             {
@@ -268,13 +275,15 @@ namespace Beztek.Facade.Storage.Providers
                     fileStore.CloseFile(fileHandle);
 
                 fileStore.Disconnect();
+                smbClient.Disconnect();
             }
         }
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
             string relativePath = GetRelativePath(logicalPath);
-            ISMBFileStore fileStore = GetFileStore(@$"{_storageProviderConfig.ShareName}");
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
             object fileHandle = null;
 
             try
@@ -316,6 +325,7 @@ namespace Beztek.Facade.Storage.Providers
                     fileStore.CloseFile(fileHandle);
 
                 fileStore.Disconnect();
+                smbClient.Disconnect();
             }
         }
 
@@ -383,9 +393,9 @@ namespace Beztek.Facade.Storage.Providers
             return paths.Last();
         }
 
-        private ISMBFileStore GetFileStore(string shareName)
+        private ISMBFileStore GetFileStore(ISMBClient smb2Client, string shareName)
         {
-            ISMBFileStore fileStore = GetAuthenticatedSmbClient().TreeConnect(shareName, out NTStatus status);
+            ISMBFileStore fileStore = smb2Client.TreeConnect(shareName, out NTStatus status);
             if (status != NTStatus.STATUS_SUCCESS)
                 throw new Exception($"Unable to load the file share '{shareName}': {status}");
 
