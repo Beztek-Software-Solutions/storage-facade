@@ -24,5 +24,7 @@ namespace Beztek.Facade.Storage
         Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false);
 
         Task DeleteStorageAsync(string storagePath);
+
+        Task<string> ComputeMD5Checksum(string logicalPath);
     }
 }

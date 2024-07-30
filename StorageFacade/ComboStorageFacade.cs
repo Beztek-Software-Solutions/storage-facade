@@ -48,14 +48,19 @@ namespace Beztek.Facade.Storage
             return await GetStorageFacade(storageInfo.LogicalPath).ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false)
+        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateHash = false)
         {
-            await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories).ConfigureAwait(false);
+            await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories, validateHash);
         }
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
             await GetStorageFacade(logicalPath).DeleteStorageAsync(logicalPath);
+        }
+
+        public async Task<string> ComputeMD5Checksum(string storagePath)
+        {
+            return await GetStorageFacade(storagePath).ComputeMD5Checksum(storagePath);
         }
 
         // Internal

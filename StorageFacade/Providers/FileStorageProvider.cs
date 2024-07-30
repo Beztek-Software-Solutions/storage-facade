@@ -2,8 +2,11 @@
 
 namespace Beztek.Facade.Storage.Providers
 {
+    using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
+    using System.Security.Cryptography;
     using System.Threading.Tasks;
     using SMBLibrary.Services;
 
@@ -78,7 +81,7 @@ namespace Beztek.Facade.Storage.Providers
 
             using (FileStream fileStream = File.Create(logicalPath))
             {
-                await inputStream.CopyToAsync(fileStream).ConfigureAwait(false);
+                await inputStream.CopyToAsync(fileStream);
                 fileStream.Flush();
                 fileStream.Close();
                 fileStream.Dispose();
@@ -91,6 +94,13 @@ namespace Beztek.Facade.Storage.Providers
             {
                 File.Delete(logicalPath);
             });
+        }
+
+        public Task<string> ComputeMD5Checksum(string logicalPath)
+        {
+            using var md5 = MD5.Create();
+            using var stream = File.OpenRead(logicalPath);
+            return Task.FromResult(Convert.ToBase64String(md5.ComputeHash(stream)));
         }
 
         // Internal

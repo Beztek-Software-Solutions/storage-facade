@@ -2,8 +2,10 @@
 
 namespace Beztek.Facade.Storage
 {
+    using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Security.Cryptography;
     using System.Text;
     using System.Threading.Tasks;
     using Beztek.Facade.Storage.Providers;
@@ -25,7 +27,7 @@ namespace Beztek.Facade.Storage
             return storageProvider.GetName();
         }
 
-        public StorageFacadeType GetType()
+        public new StorageFacadeType GetType()
         {
             return storageProvider.GetType();
         }
@@ -45,14 +47,29 @@ namespace Beztek.Facade.Storage
             return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false)
+        public async Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false)
         {
-            await storageProvider.WriteStorageAsync(storagePath, inputStream, createParentDirectories).ConfigureAwait(false);
+            HashAlgorithm? hashAlgorithm = MD5.Create();
+            Stream stream = validateChecksum ? new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true) : inputStream;
+            await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories);
+
+            // validate the checksum
+            string inputChecksum = validateChecksum ? Convert.ToBase64String(hashAlgorithm.Hash) : null;
+            string outputChecksum = validateChecksum ? await storageProvider.ComputeMD5Checksum(storagePath) : null;
+            if (validateChecksum && !inputChecksum.Equals(outputChecksum))
+            {
+                throw new Exception($"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
+            }
         }
 
         public async Task DeleteStorageAsync(string storagePath)
         {
             await storageProvider.DeleteStorageAsync(storagePath);
+        }
+
+        public async Task<string> ComputeMD5Checksum(string storagePath)
+        {
+            return await storageProvider.ComputeMD5Checksum(storagePath);
         }
     }
 }

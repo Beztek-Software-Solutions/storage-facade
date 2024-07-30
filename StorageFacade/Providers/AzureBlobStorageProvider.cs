@@ -6,6 +6,7 @@ namespace Beztek.Facade.Storage.Providers
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Security.Cryptography;
     using System.Threading.Tasks;
     using Azure;
     using Azure.Storage;
@@ -112,20 +113,16 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            BlobClient blobClient = GetBlobClient(storageInfo.LogicalPath);
-            if (!await blobClient.ExistsAsync())
-                throw new Exception($"Unable to find {storageInfo.LogicalPath}");
-
-            var response = await blobClient.DownloadAsync();
-            return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
+            return await ReadStorageAsync(storageInfo.LogicalPath);
         }
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
             // Get a reference to a blob
             BlobClient blobClient = GetBlobClient(logicalPath);
+
             // Upload data from the local file
-            await blobClient.UploadAsync(inputStream, overwrite: true).ConfigureAwait(false);
+            await blobClient.UploadAsync(inputStream, overwrite: true);
         }
 
         public async Task DeleteStorageAsync(string logicalPath)
@@ -134,6 +131,13 @@ namespace Beztek.Facade.Storage.Providers
             BlobClient blobClient = GetBlobClient(logicalPath);
             // Delete the blob
             await blobClient.DeleteAsync();
+        }
+
+        public async Task<string> ComputeMD5Checksum(string logicalPath)
+        {
+            using var md5 = MD5.Create();
+            using var stream = await ReadStorageAsync(logicalPath);
+            return Convert.ToBase64String(md5.ComputeHash(stream));
         }
 
         // Internal
@@ -172,6 +176,16 @@ namespace Beztek.Facade.Storage.Providers
             if (currPath.StartsWith("/")) currPath = currPath[1..];
             if (currPath.EndsWith("/")) currPath = currPath[..^1];
             return currPath;
+        }
+
+        private async Task<Stream> ReadStorageAsync(string logicalPath)
+        {
+            BlobClient blobClient = GetBlobClient(logicalPath);
+            if (!await blobClient.ExistsAsync())
+                throw new Exception($"Unable to find {logicalPath}");
+
+            var response = await blobClient.DownloadAsync();
+            return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
         }
     }
 }

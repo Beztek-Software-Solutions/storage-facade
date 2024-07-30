@@ -6,6 +6,7 @@ namespace Beztek.Facade.Storage.Providers
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Security.Cryptography;
     using System.Text;
     using System.Threading.Tasks;
     using SMBLibrary;
@@ -137,59 +138,7 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
         {
-            ISMBClient smbClient = GetAuthenticatedSmbClient();
-            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
-
-            string relativePath = GetRelativePath(storageInfo.LogicalPath);
-            string fileName = getFileName(storageInfo.LogicalPath);
-            string relativeParentPath = relativePath.Substring(0, relativePath.Length - fileName.Length);
-            object fileHandle = null;
-
-            try
-            {
-                // Open the file
-                fileStore.CreateFile(
-                    out fileHandle,
-                    out FileStatus fileStatus,
-                    relativePath,
-                    AccessMask.GENERIC_READ,
-                    FileAttributes.Normal,
-                    ShareAccess.Read,
-                    CreateDisposition.FILE_OPEN,
-                    CreateOptions.FILE_NON_DIRECTORY_FILE,
-                    null
-                );
-
-                if (fileStatus != FileStatus.FILE_OPENED)
-                    throw new Exception($"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}");
-
-                // Read file into MemoryStream
-                MemoryStream ms = new MemoryStream();
-                long offset = 0;
-                while (true)
-                {
-                    fileStore.ReadFile(out var bytesRead, fileHandle, offset, 4096);
-                    if (bytesRead == null || bytesRead.Length == 0)
-                        break;
-
-                    ms.Write(bytesRead);
-                    offset += bytesRead.Length;
-                }
-
-                // Reset stream position to start
-                ms.Seek(0, SeekOrigin.Begin);
-
-                return await Task.FromResult(ms).ConfigureAwait(false);
-            }
-            finally
-            {
-                // Close the file handle
-                if (fileHandle != null)
-                    fileStore.CloseFile(fileHandle);
-
-                fileStore.Disconnect();
-                smbClient.Disconnect();
-            }
+            return await ReadStorageAsync(storageInfo.LogicalPath);
         }
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
@@ -329,6 +278,13 @@ namespace Beztek.Facade.Storage.Providers
             }
         }
 
+        public async Task<string> ComputeMD5Checksum(string logicalPath)
+        {
+            using var md5 = MD5.Create();
+            using var stream = await ReadStorageAsync(logicalPath);
+            return Convert.ToBase64String(md5.ComputeHash(stream));
+        }
+
         // Internal
 
         private StorageInfo GetStorageInfo(string relativeParentPath, FileDirectoryInformation fileInfo)
@@ -414,6 +370,63 @@ namespace Beztek.Facade.Storage.Providers
                 throw new Exception($"Unable to authenticate as '{_storageProviderConfig.Username}' in domain '{_storageProviderConfig.Domain}'");
 
             return smbClient;
+        }
+
+        private async Task<Stream> ReadStorageAsync(string logicalPath)
+        {
+            ISMBClient smbClient = GetAuthenticatedSmbClient();
+            ISMBFileStore fileStore = GetFileStore(smbClient, @$"{_storageProviderConfig.ShareName}");
+
+            string relativePath = GetRelativePath(logicalPath);
+            string fileName = getFileName(logicalPath);
+            string relativeParentPath = relativePath.Substring(0, relativePath.Length - fileName.Length);
+            object fileHandle = null;
+
+            try
+            {
+                // Open the file
+                fileStore.CreateFile(
+                    out fileHandle,
+                    out FileStatus fileStatus,
+                    relativePath,
+                    AccessMask.GENERIC_READ,
+                    FileAttributes.Normal,
+                    ShareAccess.Read,
+                    CreateDisposition.FILE_OPEN,
+                    CreateOptions.FILE_NON_DIRECTORY_FILE,
+                    null
+                );
+
+                if (fileStatus != FileStatus.FILE_OPENED)
+                    throw new Exception($"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}");
+
+                // Read file into MemoryStream
+                MemoryStream ms = new MemoryStream();
+                long offset = 0;
+                while (true)
+                {
+                    fileStore.ReadFile(out var bytesRead, fileHandle, offset, 4096);
+                    if (bytesRead == null || bytesRead.Length == 0)
+                        break;
+
+                    ms.Write(bytesRead);
+                    offset += bytesRead.Length;
+                }
+
+                // Reset stream position to start
+                ms.Seek(0, SeekOrigin.Begin);
+
+                return await Task.FromResult(ms);
+            }
+            finally
+            {
+                // Close the file handle
+                if (fileHandle != null)
+                    fileStore.CloseFile(fileHandle);
+
+                fileStore.Disconnect();
+                smbClient.Disconnect();
+            }
         }
     }
 }

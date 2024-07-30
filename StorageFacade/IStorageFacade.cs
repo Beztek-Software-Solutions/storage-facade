@@ -18,8 +18,10 @@ namespace Beztek.Facade.Storage
 
         Task<Stream> ReadStorageAsync(StorageInfo logicalPath);
 
-        Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false);
+        Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false);
 
         Task DeleteStorageAsync(string logicalPath);
+        
+        Task<string> ComputeMD5Checksum(string logicalPath);
     }
 }
