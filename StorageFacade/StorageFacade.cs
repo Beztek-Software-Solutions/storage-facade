@@ -47,19 +47,24 @@ namespace Beztek.Facade.Storage
             return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false)
+        public async Task<string> WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false)
         {
             HashAlgorithm? hashAlgorithm = MD5.Create();
-            Stream stream = validateChecksum ? new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true) : inputStream;
+            Stream stream = new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true);
             await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories);
+            string inputChecksum = Convert.ToBase64String(hashAlgorithm.Hash);
 
             // validate the checksum
-            string inputChecksum = validateChecksum ? Convert.ToBase64String(hashAlgorithm.Hash) : null;
-            string outputChecksum = validateChecksum ? await storageProvider.ComputeMD5Checksum(storagePath) : null;
-            if (validateChecksum && !inputChecksum.Equals(outputChecksum))
+            if (validateChecksum)
             {
-                throw new Exception($"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
+                string outputChecksum = await storageProvider.ComputeMD5Checksum(storagePath);
+                if (!inputChecksum.Equals(outputChecksum))
+                {
+                    throw new Exception($"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
+                }
             }
+
+            return inputChecksum;
         }
 
         public async Task DeleteStorageAsync(string storagePath)

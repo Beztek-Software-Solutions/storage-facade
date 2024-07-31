@@ -5,6 +5,7 @@ namespace Beztek.Facade.Storage
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
+    using Azure.Core.Diagnostics;
 
     /// <summary>
     /// The Combo Storage Provider combines multiple stores and the Local File Store to provide a seamless experience across all file stores and mounted files
@@ -48,9 +49,9 @@ namespace Beztek.Facade.Storage
             return await GetStorageFacade(storageInfo.LogicalPath).ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateHash = false)
+        public async Task<string> WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateHash = false)
         {
-            await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories, validateHash);
+            return await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories, validateHash);
         }
 
         public async Task DeleteStorageAsync(string logicalPath)

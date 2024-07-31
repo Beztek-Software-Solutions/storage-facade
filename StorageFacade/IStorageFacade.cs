@@ -18,7 +18,15 @@ namespace Beztek.Facade.Storage
 
         Task<Stream> ReadStorageAsync(StorageInfo logicalPath);
 
-        Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false);
+        /// <summary>
+        /// Writes the given inputstream to the specified location, optionally creating parent directories or validating the checksum.
+        /// </summary>
+        /// <param name="logicalPath">The path to write to</param>
+        /// <param name="inputStream">The stream to write from</param>
+        /// <param name="createParentDirectories">Flags whether to create parent directories if they do not exist</param>
+        /// <param name="validateChecksum">Flags whether or not to validate the checksum of the written file</param>
+        /// <returns>The base64 encoded string of the MD5 checksum of the data that was written</returns>
+        Task<string> WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false);
 
         Task DeleteStorageAsync(string logicalPath);
         
