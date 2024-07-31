@@ -403,9 +403,14 @@ namespace Beztek.Facade.Storage.Providers
                 // Read file into MemoryStream
                 MemoryStream ms = new MemoryStream();
                 long offset = 0;
-                while (true)
+                NTStatus status = default;
+                while (status != NTStatus.STATUS_END_OF_FILE)
                 {
-                    fileStore.ReadFile(out var bytesRead, fileHandle, offset, 4096);
+                    status = fileStore.ReadFile(out var bytesRead, fileHandle, offset, 64 * 1024);
+
+                    if (status != NTStatus.STATUS_SUCCESS && status != NTStatus.STATUS_END_OF_FILE)
+                                throw new Exception($"Failed to read to file {relativePath} at share {_storageProviderConfig.ShareName} - status was {status}");
+
                     if (bytesRead == null || bytesRead.Length == 0)
                         break;
 
