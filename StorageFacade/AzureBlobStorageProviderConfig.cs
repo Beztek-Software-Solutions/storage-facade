@@ -3,9 +3,6 @@
 namespace Beztek.Facade.Storage
 {
     using System;
-    using System.Collections.Generic;
-    using System.Threading.Tasks;
-    using Azure.Storage;
 
     /// <summary>
     /// Implements the storage provider configuration for Azure Blob Storage

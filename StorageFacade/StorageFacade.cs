@@ -6,9 +6,7 @@ namespace Beztek.Facade.Storage
     using System.Collections.Generic;
     using System.IO;
     using System.Security.Cryptography;
-    using System.Text;
     using System.Threading.Tasks;
-    using Beztek.Facade.Storage.Providers;
 
     /// <summary>
     /// Interface defining the back-end requirements for the StorageFacade

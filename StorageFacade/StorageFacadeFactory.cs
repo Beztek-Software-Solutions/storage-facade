@@ -31,6 +31,10 @@ namespace Beztek.Facade.Storage
             {
                 return new StorageFacade(new AzureBlobStorageProvider((AzureBlobStorageProviderConfig)storageProviderConfig));
             }
+            else if (StorageFacadeType.AmazonS3Store == storageProviderConfig.StorageFacadeType)
+            {
+                return new StorageFacade(new AwsS3StorageProvider((AwsS3StorageProviderConfig)storageProviderConfig));
+            }
 
             return storageFacade;
         }

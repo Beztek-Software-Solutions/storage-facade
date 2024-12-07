@@ -7,6 +7,7 @@ namespace Beztek.Facade.Storage
         LocalFileStore,
         SMBNetworkStore,
         AzureBlobStore,
+        AmazonS3Store,
         ComboStore
     }
 }
