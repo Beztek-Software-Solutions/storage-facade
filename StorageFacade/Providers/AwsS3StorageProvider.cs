@@ -75,7 +75,7 @@ namespace Beztek.Facade.Storage.Providers
                 // Set continuation token for the next batch
                 request.ContinuationToken = response.NextContinuationToken;
 
-            } while (response.IsTruncated); // Continue if there are more objects
+            } while ((bool)response.IsTruncated); // Continue if there are more objects
         }
 
         public StorageInfo GetStorageInfo(string logicalPath)
@@ -90,8 +90,8 @@ namespace Beztek.Facade.Storage.Providers
                 IsFile = true,
                 Name = name,
                 LogicalPath = logicalPath,
-                Timestamp = response.LastModified,
-                SizeBytes = response.ContentLength
+                Timestamp = (DateTime)response.LastModified,
+                SizeBytes = (long)response.ContentLength
             };
         }
 
@@ -138,8 +138,8 @@ namespace Beztek.Facade.Storage.Providers
                 IsFile = true,
                 Name = GetNameFromLogicalPath(s3Object.Key),
                 LogicalPath = $"{GetName()}/{s3Object.Key}",
-                Timestamp = s3Object.LastModified,
-                SizeBytes = s3Object.Size
+                Timestamp = (DateTime)s3Object.LastModified,
+                SizeBytes = (long)s3Object.Size
             };
         }
 
