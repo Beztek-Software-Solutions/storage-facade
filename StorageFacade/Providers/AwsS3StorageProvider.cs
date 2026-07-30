@@ -66,7 +66,8 @@ namespace Beztek.Facade.Storage.Providers
                     else
                     {
                         string currPath = s3Object.Key;
-                        if (currPath == $"{prefix}/{GetNameFromLogicalPath(currPath)}") {
+                        if (currPath == $"{prefix}/{GetNameFromLogicalPath(currPath)}")
+                        {
                             yield return GetStorageInfo(s3Object);
                         }
                     }

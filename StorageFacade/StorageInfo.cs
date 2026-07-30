@@ -20,13 +20,15 @@ namespace Beztek.Facade.Storage
         public long SizeBytes { get; set; }
         public string Extension
         {
-            get {
+            get
+            {
                 return this.Name.Split(".").Last<string>();
             }
         }
         public string MimeType
         {
-            get {
+            get
+            {
                 return MimeTypeMap.GetMimeType(this.Extension);
             }
         }

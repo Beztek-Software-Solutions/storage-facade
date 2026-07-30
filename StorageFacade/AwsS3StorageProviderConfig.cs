@@ -23,7 +23,7 @@ namespace Beztek.Facade.Storage
 
         public StorageFacadeType StorageFacadeType { get; }
 
-        internal string AccessKeyId{ get; }
+        internal string AccessKeyId { get; }
 
         internal string SecretAccessKey { get; }
 

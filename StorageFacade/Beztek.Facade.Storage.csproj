@@ -3,31 +3,33 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <id>Beztek.Facade.Storage</id>
-    <version>1.2.8</version>
+    <version>1.2.9</version>
     <authors>Peter Thomas</authors>
     <owners>Beztek Software Solutions</owners>
-    <licenseUrl>https://github.com/Beztek-Software-Solutions/storage-facade/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/Beztek-Software-Solutions/storage-facade</projectUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>Storage Facade</description>
     <releaseNotes>Storage Facade</releaseNotes>
     <copyright>Copyright 2023, Beztek Software Solutions</copyright>
     <tags>Beztek.Facade;Beztek.Facade.Storage;storage-facade;StorageFacadeFacade</tags>
-    <Description></Description>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.24.0" />
-    <PackageReference Include="AWSSDK.S3" Version="4.0.0.3" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.4" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.1" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.10" />
     <PackageReference Include="MimeTypeMapOfficial" Version="1.0.17" />
-    <PackageReference Include="SMBLibrary" Version="1.5.4" />
+    <PackageReference Include="SMBLibrary" Version="1.5.7.1" />
   </ItemGroup>
 
   <ItemGroup>
-	  <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-	    <_Parameter1>Beztek.Facade.Storage.Tests</_Parameter1>
-	  </AssemblyAttribute>
-  </ItemGroup> 	
+    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\README.md" Pack="true" PackagePath="" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Beztek.Facade.Storage.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
 </Project>

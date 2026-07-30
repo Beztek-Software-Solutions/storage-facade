@@ -4,7 +4,7 @@ namespace Beztek.Facade.Storage
 {
     using System.Collections.Generic;
     using Beztek.Facade.Storage.Providers;
-    
+
     /// <summary>
     /// QueueClientFactory.
     /// </summary>

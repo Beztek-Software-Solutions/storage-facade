@@ -30,7 +30,7 @@ namespace Beztek.Facade.Storage
             this.AccountKey = accountKey;
             this.ContainerName = containerName;
             this.Name = $"https://{domainName}/{this.ContainerName}".ToLower();
-            this.BlobUri = new Uri( $"https://{domainName}".ToLower());
+            this.BlobUri = new Uri($"https://{domainName}".ToLower());
             this.IsHierarchicalNamespace = isHierarchicalNamespace;
         }
 
@@ -57,13 +57,13 @@ namespace Beztek.Facade.Storage
         {
             return blobUri.ToString().Split("?")[0].Split("/")[2].Split(".")[0];
         }
-        
+
         // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
         private string GetContainerNameFromBlobUri(Uri blobUri)
         {
             return blobUri.ToString().Split("?")[0].Split("/")[3];
         }
-        
+
         // This returns the account name from the blob Uri of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken>
         private string GetSASTokenFromBlobUri(Uri blobUri)
         {

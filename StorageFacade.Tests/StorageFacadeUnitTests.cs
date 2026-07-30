@@ -93,7 +93,7 @@ namespace Beztek.Facade.Storage.Tests
             {
                 await storageFacade.DeleteStorageAsync(storageInfo.LogicalPath);
             }
-            Assert.That(isRecursive?2:1, Is.EqualTo(index));
+            Assert.That(isRecursive ? 2 : 1, Is.EqualTo(index));
         }
 
         private async Task TestStorageStreamRead(IStorageFacade storageFacade)
@@ -140,9 +140,12 @@ namespace Beztek.Facade.Storage.Tests
 
             // Then delete
             await storageFacade.DeleteStorageAsync(path);
-            try {
+            try
+            {
                 storageInfo = storageFacade.GetStorageInfo(path);
-            } catch {
+            }
+            catch
+            {
                 return; // Success case. We expected an exception to be thrown since the storage has been deleted 
             }
             throw new Exception("Expected the storage to have been deleted");

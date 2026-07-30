@@ -409,7 +409,7 @@ namespace Beztek.Facade.Storage.Providers
                     status = fileStore.ReadFile(out var bytesRead, fileHandle, offset, 64 * 1024);
 
                     if (status != NTStatus.STATUS_SUCCESS && status != NTStatus.STATUS_END_OF_FILE)
-                                throw new Exception($"Failed to read to file {relativePath} at share {_storageProviderConfig.ShareName} - status was {status}");
+                        throw new Exception($"Failed to read to file {relativePath} at share {_storageProviderConfig.ShareName} - status was {status}");
 
                     if (bytesRead == null || bytesRead.Length == 0)
                         break;

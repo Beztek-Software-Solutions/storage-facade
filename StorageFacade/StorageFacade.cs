@@ -45,9 +45,9 @@ namespace Beztek.Facade.Storage
             return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
         }
 
-        public async Task<string> WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false)
+        public async Task<string> WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories = false, bool validateChecksum = false)
         {
-            HashAlgorithm? hashAlgorithm = MD5.Create();
+            HashAlgorithm hashAlgorithm = MD5.Create();
             Stream stream = new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true);
             await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories);
             string inputChecksum = Convert.ToBase64String(hashAlgorithm.Hash);

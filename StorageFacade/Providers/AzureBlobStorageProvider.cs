@@ -7,6 +7,7 @@ namespace Beztek.Facade.Storage.Providers
     using System.IO;
     using System.Linq;
     using System.Security.Cryptography;
+    using System.Threading;
     using System.Threading.Tasks;
     using Azure;
     using Azure.Storage;
@@ -55,7 +56,7 @@ namespace Beztek.Facade.Storage.Providers
             if ("/".Equals(prefix)) prefix = "";
             if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
             {
-                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(prefix: prefix, delimiter: "/").AsEnumerable())
+                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(BlobTraits.None, BlobStates.None, "/", prefix).AsEnumerable())
                 {
                     // A hierarchical listing may return both virtual directories and blobs.
                     if (blobOrFolder.IsBlob)
@@ -80,7 +81,7 @@ namespace Beztek.Facade.Storage.Providers
             }
             else
             {
-                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.None, BlobStates.None, prefix).AsEnumerable())
+                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.None, BlobStates.None, prefix, CancellationToken.None).AsEnumerable())
                 {
                     if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
                     {

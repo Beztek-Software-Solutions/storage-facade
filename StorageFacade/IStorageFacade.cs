@@ -9,7 +9,7 @@ namespace Beztek.Facade.Storage
     public interface IStorageFacade
     {
         public string GetName();
-        
+
         StorageFacadeType GetType();
 
         IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null);
@@ -26,10 +26,10 @@ namespace Beztek.Facade.Storage
         /// <param name="createParentDirectories">Flags whether to create parent directories if they do not exist</param>
         /// <param name="validateChecksum">Flags whether or not to validate the checksum of the written file</param>
         /// <returns>The base64 encoded string of the MD5 checksum of the data that was written</returns>
-        Task<string> WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories=false, bool validateChecksum = false);
+        Task<string> WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false, bool validateChecksum = false);
 
         Task DeleteStorageAsync(string logicalPath);
-        
+
         Task<string> ComputeMD5Checksum(string logicalPath);
     }
 }
