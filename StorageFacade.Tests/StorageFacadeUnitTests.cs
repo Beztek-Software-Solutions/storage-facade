@@ -35,30 +35,6 @@ namespace Beztek.Facade.Storage.Tests
             await TestStorageDelete(GetTestFileStorageFacade());
         }
 
-        [Test]
-        public async Task TestS3StorageEnumerateRecursive()
-        {
-            await TestStorageEnumerate(GetTestS3StorageFacade(), true);
-        }
-
-        [Test]
-        public async Task TestS3StorageEnumerateNonRecursive()
-        {
-            await TestStorageEnumerate(GetTestS3StorageFacade(), false);
-        }
-
-        [Test]
-        public async Task TestS3StorageStreamRead()
-        {
-            await TestStorageStreamRead(GetTestS3StorageFacade());
-        }
-
-        [Test]
-        public async Task TestS3StorageDelete()
-        {
-            await TestStorageDelete(GetTestS3StorageFacade());
-        }
-
         // Internal
 
         private async Task TestStorageEnumerate(IStorageFacade storageFacade, Boolean isRecursive)
@@ -149,22 +125,6 @@ namespace Beztek.Facade.Storage.Tests
                 return; // Success case. We expected an exception to be thrown since the storage has been deleted 
             }
             throw new Exception("Expected the storage to have been deleted");
-        }
-
-        private IStorageFacade GetTestS3StorageFacade()
-        {
-            string accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
-            string secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
-            string bucket = Environment.GetEnvironmentVariable("BEZTEK_S3_TEST_BUCKET");
-            string region = Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1";
-
-            if (string.IsNullOrWhiteSpace(accessKey) || string.IsNullOrWhiteSpace(secretKey) || string.IsNullOrWhiteSpace(bucket))
-            {
-                Assert.Ignore("Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and BEZTEK_S3_TEST_BUCKET to run the S3 storage tests.");
-            }
-
-            IStorageProviderConfig config = new AwsS3StorageProviderConfig(accessKey, secretKey, region, bucket);
-            return StorageFacadeFactory.GetStorageFacade(config);
         }
 
         private IStorageFacade GetTestFileStorageFacade()

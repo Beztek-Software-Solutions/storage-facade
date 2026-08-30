@@ -2,19 +2,18 @@
 
 namespace Beztek.Facade.Storage
 {
-    using System.Collections.Generic;
     using Beztek.Facade.Storage.Providers;
 
     /// <summary>
-    /// QueueClientFactory.
+    /// Factory for <see cref="IStorageFacade"/> instances backed by a configured provider.
     /// </summary>
     public static class StorageFacadeFactory
     {
         /// <summary>
-        /// Gets an instance of a StorageFacade based on the provider config provided.
+        /// Creates a storage facade for the given provider configuration.
         /// </summary>
-        /// <param name="storageProviderConfig"></param>
-        /// <returns></returns>
+        /// <param name="storageProviderConfig">Provider-specific configuration (local, SMB, Azure, or S3).</param>
+        /// <returns>A facade wrapping the selected provider.</returns>
         public static IStorageFacade GetStorageFacade(IStorageProviderConfig storageProviderConfig)
         {
             IStorageFacade storageFacade = null;

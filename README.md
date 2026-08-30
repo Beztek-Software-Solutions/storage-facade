@@ -1,15 +1,50 @@
-# Storage Facade Library
+# Storage Facade
 
-This library is intended for providng a standard interface to storage.  The source can be found here: https://github.com/Beztek-Software-Solutions/storage-facade
+Unified .NET storage facade (`Beztek.Facade.Storage`) over local files, SMB network shares, Azure Blob Storage, and Amazon S3.
 
-# Overview
+Source: https://github.com/Beztek-Software-Solutions/storage-facade
 
-It is intended to be portable to multiple kinds of storage, such as Azure Blob Storage, Local files, SMB file shares, etc. It can access SMB shares from Linux-based servers
+## Projects
 
-## Poor Man's DFS (Domain File Share) implementation
+| Project | Description |
+|---------|-------------|
+| [`StorageFacade/`](StorageFacade/) | Library package `Beztek.Facade.Storage` (see [StorageFacade/README.md](StorageFacade/README.md) for full API and provider guidance) |
+| [`StorageFacade.Tests/`](StorageFacade.Tests/) | NUnit unit tests |
 
-The SMB Networking provider also has a "poor-man's" way of accessing DFS shares. Although the underlying SMBLibrary does not provide  DFS Support, this object can configure an SMB Share with an optional physical server that maps the DFS name. This mapping is handled transparently by the library. For example, if the DFS name is \\\\\<server1>\\\<path1>\\\<path2> which is the DFS share for \\\\\<physical server 1>\\\<path2>, if the DFS name \\\\\<server1>\\\<path1> is mapped to the physical server \\\\\<physical server 1> (where \<path2> is the share name), this library will correctly access all the DFS files transparently. So while this library cannot automatically resolve DFS names, this provides a work-around, as long as the destination physical server does not change while this instance is up.
+## Quick start
 
-## Combine multiple shares for a seamless experience
+```bash
+dotnet restore Beztek.Facade.Storage.sln
+dotnet build Beztek.Facade.Storage.sln
+dotnet test StorageFacade.Tests/Beztek.Facade.Storage.Tests.csproj
+```
 
-There is also a Combo StorageFacade class which combines multple authenticated SMB Networking share providers along with the local file system provider, to provide a unified experience of seamlessly accessing SMB network shares, and local files using the same single facade, as if one were a logged-in windows user in the network.
+With coverage (Coverlet; target ≥ 85% line coverage):
+
+```bash
+dotnet test StorageFacade.Tests/Beztek.Facade.Storage.Tests.csproj \
+  /p:CollectCoverage=true \
+  /p:CoverletOutputFormat=cobertura \
+  /p:CoverletOutput=./coverage/ \
+  /p:Include='[Beztek.Facade.Storage]*' \
+  /p:Threshold=85 \
+  /p:ThresholdType=line
+```
+
+## NuGet
+
+```bash
+dotnet add package Beztek.Facade.Storage
+```
+
+See [StorageFacade/README.md](StorageFacade/README.md) for initialization samples, logical path conventions, and the combo (multi-store) facade.
+
+## Providers
+
+| Provider | Configuration type | Status |
+|----------|-------------------|--------|
+| Local files | `FileStorageProviderConfig` | Implemented |
+| SMB network share | `SMBNetworkStorageProviderConfig` | Implemented (includes DFS physical-server mapping) |
+| Azure Blob Storage | `AzureBlobStorageProviderConfig` | Implemented |
+| Amazon S3 | `AwsS3StorageProviderConfig` | Implemented |
+| Combo (multi-store) | `ComboStorageFacade` | Implemented |

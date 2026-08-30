@@ -5,16 +5,41 @@ namespace Beztek.Facade.Storage
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
-    using Azure.Core.Diagnostics;
 
     /// <summary>
-    /// The Combo Storage Provider combines multiple stores and the Local File Store to provide a seamless experience across all file stores and mounted files
+    /// Routes storage operations to one of several configured facades by matching the path prefix,
+    /// falling back to the local file store when no prefix matches.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each child facade registered in the constructor is indexed by its <see cref="IStorageFacade.GetName"/>
+    /// value, which must match the prefix of logical paths for that store (e.g. <c>s3://bucket</c>,
+    /// <c>https://account.blob.core.windows.net/container</c>, <c>\\server\share</c>).
+    /// </para>
+    /// <para>
+    /// Routing uses the first registered facade where
+    /// <c>logicalPath.ToLower().StartsWith(entry.Key)</c>. Registration order matters when prefixes
+    /// overlap; this is not a longest-prefix match.
+    /// </para>
+    /// <para>
+    /// A default local-file facade is always created via
+    /// <see cref="StorageFacadeFactory.GetStorageFacade"/> and <see cref="FileStorageProviderConfig"/>.
+    /// It is not part of the prefix table; it handles any path that does not start with a registered
+    /// prefix (typical OS paths such as <c>/tmp/file</c> or <c>C:\data\file</c>).
+    /// </para>
+    /// </remarks>
     public class ComboStorageFacade : IStorageFacade
     {
         private Dictionary<string, IStorageFacade> _storageProviders = new Dictionary<string, IStorageFacade>();
         private IStorageFacade _defaultStorageFacade;
 
+        /// <summary>
+        /// Registers the given facades for prefix-based routing and initializes the default local-file fallback.
+        /// </summary>
+        /// <param name="storageFacades">
+        /// Child facades to register. Each <see cref="IStorageFacade.GetName"/> becomes a routing prefix.
+        /// Order matters when prefixes overlap (first match wins).
+        /// </param>
         public ComboStorageFacade(List<IStorageFacade> storageFacades)
         {
             foreach (IStorageFacade storageFacade in storageFacades)
@@ -24,58 +49,42 @@ namespace Beztek.Facade.Storage
             _defaultStorageFacade = StorageFacadeFactory.GetStorageFacade(new FileStorageProviderConfig());
         }
 
-        public string GetName()
-        {
-            return "ComboProvider";
-        }
+        /// <inheritdoc/>
+        public string GetName() => "ComboProvider";
 
-        public new StorageFacadeType GetType()
-        {
-            return StorageFacadeType.ComboStore;
-        }
+        /// <inheritdoc/>
+        public new StorageFacadeType GetType() => StorageFacadeType.ComboStore;
 
+        /// <inheritdoc/>
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
-        {
-            return GetStorageFacade(logicalPath).EnumerateStorageInfo(logicalPath, isRecursive, storageFilter);
-        }
+            => GetStorageFacade(logicalPath).EnumerateStorageInfo(logicalPath, isRecursive, storageFilter);
 
+        /// <inheritdoc/>
         public StorageInfo GetStorageInfo(string logicalPath)
-        {
-            return GetStorageFacade(logicalPath).GetStorageInfo(logicalPath);
-        }
+            => GetStorageFacade(logicalPath).GetStorageInfo(logicalPath);
 
+        /// <inheritdoc/>
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
-        {
-            return await GetStorageFacade(storageInfo.LogicalPath).ReadStorageAsync(storageInfo).ConfigureAwait(false);
-        }
+            => await GetStorageFacade(storageInfo.LogicalPath).ReadStorageAsync(storageInfo).ConfigureAwait(false);
 
+        /// <inheritdoc/>
         public async Task<string> WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false, bool validateHash = false)
-        {
-            return await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories, validateHash);
-        }
+            => await GetStorageFacade(logicalPath).WriteStorageAsync(logicalPath, inputStream, createParentDirectories, validateHash);
 
+        /// <inheritdoc/>
         public async Task DeleteStorageAsync(string logicalPath)
-        {
-            await GetStorageFacade(logicalPath).DeleteStorageAsync(logicalPath);
-        }
+            => await GetStorageFacade(logicalPath).DeleteStorageAsync(logicalPath);
 
+        /// <inheritdoc/>
         public async Task<string> ComputeMD5Checksum(string storagePath)
-        {
-            return await GetStorageFacade(storagePath).ComputeMD5Checksum(storagePath);
-        }
-
-        // Internal
+            => await GetStorageFacade(storagePath).ComputeMD5Checksum(storagePath);
 
         IStorageFacade GetStorageFacade(string logicalPath)
         {
             foreach (KeyValuePair<string, IStorageFacade> entry in _storageProviders)
             {
-                string key = entry.Key;
-                IStorageFacade value = entry.Value;
-                if (logicalPath.ToLower().StartsWith(key))
-                {
+                if (logicalPath.ToLower().StartsWith(entry.Key))
                     return entry.Value;
-                }
             }
             return _defaultStorageFacade;
         }

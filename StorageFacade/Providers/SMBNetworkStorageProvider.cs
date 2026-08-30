@@ -19,10 +19,17 @@ namespace Beztek.Facade.Storage.Providers
     internal class SMBNetworkStorageProvider : IStorageProvider
     {
         private SMBNetworkStorageProviderConfig _storageProviderConfig;
+        private ISmbClientFactory _smbClientFactory;
 
         internal SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig)
+            : this(smbNetworkStorageProviderConfig, new SmbClientFactory(smbNetworkStorageProviderConfig))
+        {
+        }
+
+        internal SMBNetworkStorageProvider(SMBNetworkStorageProviderConfig smbNetworkStorageProviderConfig, ISmbClientFactory smbClientFactory)
         {
             _storageProviderConfig = smbNetworkStorageProviderConfig;
+            _smbClientFactory = smbClientFactory;
         }
 
         public string GetName()
@@ -358,18 +365,9 @@ namespace Beztek.Facade.Storage.Providers
             return fileStore;
         }
 
-        private SMB2Client GetAuthenticatedSmbClient()
+        private ISMBClient GetAuthenticatedSmbClient()
         {
-            SMB2Client smbClient = new SMB2Client();
-            bool isConnected = smbClient.Connect(_storageProviderConfig.PhysicalServer, SMBTransportType.DirectTCPTransport);
-            if (!isConnected)
-                throw new Exception($"Unable to connect to '{_storageProviderConfig.LogicalServer}'");
-
-            NTStatus status = smbClient.Login(_storageProviderConfig.Domain, _storageProviderConfig.Username, _storageProviderConfig.Password, AuthenticationMethod.NTLMv2);
-            if (status != NTStatus.STATUS_SUCCESS)
-                throw new Exception($"Unable to authenticate as '{_storageProviderConfig.Username}' in domain '{_storageProviderConfig.Domain}'");
-
-            return smbClient;
+            return _smbClientFactory.CreateConnectedClient();
         }
 
         private async Task<Stream> ReadStorageAsync(string logicalPath)

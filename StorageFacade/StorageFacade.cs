@@ -9,42 +9,37 @@ namespace Beztek.Facade.Storage
     using System.Threading.Tasks;
 
     /// <summary>
-    /// Interface defining the back-end requirements for the StorageFacade
+    /// Default <see cref="IStorageFacade"/> implementation that wraps an <see cref="IStorageProvider"/>
+    /// and computes MD5 checksums on write.
     /// </summary>
     public class StorageFacade : IStorageFacade
     {
         private IStorageProvider storageProvider;
 
+        /// <summary>Creates a facade over the given provider.</summary>
         public StorageFacade(IStorageProvider storageProvider)
         {
             this.storageProvider = storageProvider;
         }
 
-        public string GetName()
-        {
-            return storageProvider.GetName();
-        }
+        /// <inheritdoc/>
+        public string GetName() => storageProvider.GetName();
 
-        public new StorageFacadeType GetType()
-        {
-            return storageProvider.GetType();
-        }
+        /// <inheritdoc/>
+        public new StorageFacadeType GetType() => storageProvider.GetType();
 
+        /// <inheritdoc/>
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
-        {
-            return storageProvider.EnumerateStorageInfo(rootPath, isRecursive, storageFilter);
-        }
+            => storageProvider.EnumerateStorageInfo(rootPath, isRecursive, storageFilter);
 
-        public StorageInfo GetStorageInfo(string storagePath)
-        {
-            return storageProvider.GetStorageInfo(storagePath);
-        }
+        /// <inheritdoc/>
+        public StorageInfo GetStorageInfo(string storagePath) => storageProvider.GetStorageInfo(storagePath);
 
+        /// <inheritdoc/>
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
-        {
-            return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
-        }
+            => await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
 
+        /// <inheritdoc/>
         public async Task<string> WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories = false, bool validateChecksum = false)
         {
             HashAlgorithm hashAlgorithm = MD5.Create();
@@ -52,7 +47,6 @@ namespace Beztek.Facade.Storage
             await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories);
             string inputChecksum = Convert.ToBase64String(hashAlgorithm.Hash);
 
-            // validate the checksum
             if (validateChecksum)
             {
                 string outputChecksum = await storageProvider.ComputeMD5Checksum(storagePath);
@@ -65,14 +59,12 @@ namespace Beztek.Facade.Storage
             return inputChecksum;
         }
 
+        /// <inheritdoc/>
         public async Task DeleteStorageAsync(string storagePath)
-        {
-            await storageProvider.DeleteStorageAsync(storagePath);
-        }
+            => await storageProvider.DeleteStorageAsync(storagePath);
 
+        /// <inheritdoc/>
         public async Task<string> ComputeMD5Checksum(string storagePath)
-        {
-            return await storageProvider.ComputeMD5Checksum(storagePath);
-        }
+            => await storageProvider.ComputeMD5Checksum(storagePath);
     }
 }

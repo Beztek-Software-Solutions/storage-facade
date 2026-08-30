@@ -11,11 +11,10 @@ namespace Beztek.Facade.Storage.Providers
     using Amazon.Runtime;
     using Amazon.S3;
     using Amazon.S3.Model;
-    using Amazon.S3.Transfer;
     using Beztek.Facade.Storage;
 
     /// <summary>
-    /// Implements the storage provider for Azure Blob Storage
+    /// Storage provider for Amazon S3.
     /// </summary>
     internal class AwsS3StorageProvider : IStorageProvider
     {
@@ -23,11 +22,14 @@ namespace Beztek.Facade.Storage.Providers
         private IAmazonS3 AwsS3Client;
 
         internal AwsS3StorageProvider(AwsS3StorageProviderConfig awsS3StorageProviderConfig)
+            : this(awsS3StorageProviderConfig, CreateClient(awsS3StorageProviderConfig))
+        {
+        }
+
+        internal AwsS3StorageProvider(AwsS3StorageProviderConfig awsS3StorageProviderConfig, IAmazonS3 awsS3Client)
         {
             AwsS3StorageProviderConfig = awsS3StorageProviderConfig;
-            var awsCredentials = new BasicAWSCredentials(awsS3StorageProviderConfig.AccessKeyId, awsS3StorageProviderConfig.SecretAccessKey);
-            var regionEndpoint = RegionEndpoint.GetBySystemName(awsS3StorageProviderConfig.RegionName);
-            AwsS3Client = new AmazonS3Client(awsCredentials, regionEndpoint);
+            AwsS3Client = awsS3Client;
         }
 
         public string GetName()
@@ -47,7 +49,7 @@ namespace Beztek.Facade.Storage.Providers
             var request = new ListObjectsV2Request
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,
-                Prefix = prefix // Start from the specified subfolder
+                Prefix = prefix
             };
 
             ListObjectsV2Response response;
@@ -73,10 +75,9 @@ namespace Beztek.Facade.Storage.Providers
                     }
                 }
 
-                // Set continuation token for the next batch
                 request.ContinuationToken = response.NextContinuationToken;
 
-            } while ((bool)response.IsTruncated); // Continue if there are more objects
+            } while ((bool)response.IsTruncated);
         }
 
         public StorageInfo GetStorageInfo(string logicalPath)
@@ -103,23 +104,25 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            // Use TransferUtility for efficient upload
-            var transferUtility = new TransferUtility(AwsS3Client);
+            var putRequest = new PutObjectRequest
+            {
+                BucketName = AwsS3StorageProviderConfig.BucketName,
+                Key = GetRelativePath(logicalPath),
+                InputStream = inputStream,
+                AutoCloseStream = false
+            };
 
-            // Upload the stream to S3 using TransferUtility
-            await transferUtility.UploadAsync(inputStream, AwsS3StorageProviderConfig.BucketName, GetRelativePath(logicalPath));
+            await AwsS3Client.PutObjectAsync(putRequest);
         }
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
-            // Create delete request
             var deleteRequest = new DeleteObjectRequest
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,
                 Key = GetRelativePath(logicalPath)
             };
 
-            // Execute delete
             await AwsS3Client.DeleteObjectAsync(deleteRequest);
         }
 
@@ -130,7 +133,12 @@ namespace Beztek.Facade.Storage.Providers
             return Convert.ToBase64String(md5.ComputeHash(stream));
         }
 
-        // Internal
+        private static IAmazonS3 CreateClient(AwsS3StorageProviderConfig config)
+        {
+            var awsCredentials = new BasicAWSCredentials(config.AccessKeyId, config.SecretAccessKey);
+            var regionEndpoint = RegionEndpoint.GetBySystemName(config.RegionName);
+            return new AmazonS3Client(awsCredentials, regionEndpoint);
+        }
 
         private StorageInfo GetStorageInfo(S3Object s3Object)
         {
@@ -150,7 +158,6 @@ namespace Beztek.Facade.Storage.Providers
             return logicalPath[index..];
         }
 
-        // This returns the relative path from the logical path
         private string GetRelativePath(string logicalPath)
         {
             if (!logicalPath.EndsWith("/")) logicalPath = $"{logicalPath}/";
@@ -164,7 +171,6 @@ namespace Beztek.Facade.Storage.Providers
 
         private async Task<Stream> ReadStorageAsync(string logicalPath)
         {
-            // Get the object from S3 as a stream
             var getObjectRequest = new GetObjectRequest
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,

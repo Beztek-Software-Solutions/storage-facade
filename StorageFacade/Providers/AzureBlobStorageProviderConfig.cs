@@ -4,13 +4,13 @@ namespace Beztek.Facade.Storage
 {
     using System;
 
-    /// <summary>
-    /// Implements the storage provider configuration for Azure Blob Storage
-    /// </summary>
+    /// <summary>Configuration for the Azure Blob Storage provider.</summary>
     public class AzureBlobStorageProviderConfig : IStorageProviderConfig
     {
+        /// <inheritdoc/>
         public string Name { get; }
 
+        /// <inheritdoc/>
         public StorageFacadeType StorageFacadeType { get; }
 
         internal Uri BlobUri { get; }
@@ -23,6 +23,14 @@ namespace Beztek.Facade.Storage
 
         internal bool IsHierarchicalNamespace { get; }
 
+        /// <summary>
+        /// Creates a configuration using account name/key credentials.
+        /// <see cref="Name"/> is normalized to <c>https://{domainName}/{containerName}</c>.
+        /// </summary>
+        /// <param name="domainName">Blob endpoint host, e.g. <c>myaccount.blob.core.windows.net</c>.</param>
+        /// <param name="accountKey">Storage account key.</param>
+        /// <param name="containerName">Target container name.</param>
+        /// <param name="isHierarchicalNamespace">When true, uses hierarchical (ADLS Gen2) listing.</param>
         public AzureBlobStorageProviderConfig(string domainName, string accountKey, string containerName, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;
@@ -35,10 +43,13 @@ namespace Beztek.Facade.Storage
         }
 
         /// <summary>
-        /// Creates a configuration object for Azure Blob Storage Provider
+        /// Creates a configuration from a container SAS URI.
         /// </summary>
-        /// <param name="blobUri">of the format: https://<account-name>.blob.core.windows.net/<container-name>/?<SASToken></param>
-        /// <param name="containerName">See the format of the blob url above. The container name is a part of the blob url</param>
+        /// <param name="blobUri">
+        /// URI of the form
+        /// <c>https://{account}.blob.core.windows.net/{container}/?{SASToken}</c>.
+        /// </param>
+        /// <param name="isHierarchicalNamespace">When true, uses hierarchical (ADLS Gen2) listing.</param>
         public AzureBlobStorageProviderConfig(Uri blobUri, bool isHierarchicalNamespace = false)
         {
             this.StorageFacadeType = StorageFacadeType.AzureBlobStore;

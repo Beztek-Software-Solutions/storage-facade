@@ -3,12 +3,11 @@ namespace Beztek.Facade.Storage
     using System;
     using Amazon;
 
-    /// <summary>
-    /// Implements the storage provider configuration for Azure Blob Storage
-    /// </summary>
+    /// <summary>Configuration for the Amazon S3 storage provider.</summary>
     public class AwsS3StorageProviderConfig : IStorageProviderConfig
     {
 
+        /// <summary>Creates an S3 provider configuration. <see cref="Name"/> is normalized to `s3://{bucket}`.</summary>
         public AwsS3StorageProviderConfig(string accessKeyId, string secretAccessKey, string regionName, string bucketName)
         {
             this.StorageFacadeType = StorageFacadeType.AmazonS3Store;
@@ -19,8 +18,10 @@ namespace Beztek.Facade.Storage
             this.Name = $"s3://{bucketName}".ToLower();
         }
 
+        /// <inheritdoc/>
         public string Name { get; }
 
+        /// <inheritdoc/>
         public StorageFacadeType StorageFacadeType { get; }
 
         internal string AccessKeyId { get; }

@@ -7,37 +7,29 @@ namespace Beztek.Facade.Storage.Providers
     using System.IO;
     using System.Linq;
     using System.Security.Cryptography;
-    using System.Threading;
     using System.Threading.Tasks;
-    using Azure;
     using Azure.Storage;
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
     using Beztek.Facade.Storage;
 
     /// <summary>
-    /// Implements the storage provider for Azure Blob Storage
+    /// Storage provider for Azure Blob Storage.
     /// </summary>
     internal class AzureBlobStorageProvider : IStorageProvider
     {
         private AzureBlobStorageProviderConfig azureBlobStorageProviderConfig { get; }
-        private BlobContainerClient blobContainerClient;
+        private IAzureBlobContainerAdapter blobContainerAdapter;
 
         internal AzureBlobStorageProvider(AzureBlobStorageProviderConfig azureBlobStorageProviderConfig)
+            : this(azureBlobStorageProviderConfig, CreateAdapter(azureBlobStorageProviderConfig))
+        {
+        }
+
+        internal AzureBlobStorageProvider(AzureBlobStorageProviderConfig azureBlobStorageProviderConfig, IAzureBlobContainerAdapter blobContainerAdapter)
         {
             this.azureBlobStorageProviderConfig = azureBlobStorageProviderConfig;
-
-            if (azureBlobStorageProviderConfig.AccountKey != null)
-            {
-                // Account Key and Account Name
-                BlobServiceClient blobServiceClient = new BlobServiceClient(azureBlobStorageProviderConfig.BlobUri, new StorageSharedKeyCredential(azureBlobStorageProviderConfig.AccountName, azureBlobStorageProviderConfig.AccountKey));
-                this.blobContainerClient = blobServiceClient!.GetBlobContainerClient(azureBlobStorageProviderConfig.ContainerName);
-            }
-            else
-            {
-                // SAS Token
-                this.blobContainerClient = new BlobContainerClient(azureBlobStorageProviderConfig.BlobUri);
-            }
+            this.blobContainerAdapter = blobContainerAdapter;
         }
 
         public string GetName()
@@ -56,12 +48,11 @@ namespace Beztek.Facade.Storage.Providers
             if ("/".Equals(prefix)) prefix = "";
             if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
             {
-                foreach (BlobHierarchyItem blobOrFolder in blobContainerClient.GetBlobsByHierarchy(BlobTraits.None, BlobStates.None, "/", prefix).AsEnumerable())
+                foreach (BlobHierarchyItem blobOrFolder in blobContainerAdapter.GetBlobsByHierarchy(prefix))
                 {
-                    // A hierarchical listing may return both virtual directories and blobs.
                     if (blobOrFolder.IsBlob)
                     {
-                        BlobProperties blobProperties = blobContainerClient.GetBlobClient($"/{blobOrFolder.Blob.Name}").GetProperties();
+                        BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(blobOrFolder.Blob.Name);
                         string path = blobOrFolder.Blob.Name;
                         string[] paths = path.Split("/");
                         string name = paths[paths.Length - 1];
@@ -81,18 +72,17 @@ namespace Beztek.Facade.Storage.Providers
             }
             else
             {
-                foreach (BlobItem blobItem in blobContainerClient.GetBlobs(BlobTraits.None, BlobStates.None, prefix, CancellationToken.None).AsEnumerable())
+                foreach (BlobItem blobItem in blobContainerAdapter.GetBlobs(prefix))
                 {
                     if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
                     {
                         if (!isRecursive)
                         {
-                            // Continue processing only if listing recursively
                             continue;
                         }
                     }
 
-                    BlobProperties blobProperties = blobContainerClient.GetBlobClient(blobItem.Name).GetProperties();
+                    BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(blobItem.Name);
                     string path = blobItem.Name;
                     string[] paths = path.Split("/");
                     string name = paths[paths.Length - 1];
@@ -106,8 +96,7 @@ namespace Beztek.Facade.Storage.Providers
 
         public StorageInfo GetStorageInfo(string logicalPath)
         {
-            BlobClient blobClient = GetBlobClient(logicalPath);
-            BlobProperties blobProperties = blobClient.GetProperties();
+            BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(GetRelativePath(logicalPath));
             string name = GetNameFromLogicalPath(logicalPath);
             return GetStorageInfo(name, logicalPath, blobProperties);
         }
@@ -119,19 +108,12 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            // Get a reference to a blob
-            BlobClient blobClient = GetBlobClient(logicalPath);
-
-            // Upload data from the local file
-            await blobClient.UploadAsync(inputStream, overwrite: true);
+            await blobContainerAdapter.UploadAsync(GetRelativePath(logicalPath), inputStream);
         }
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
-            // Get a reference to a blob
-            BlobClient blobClient = GetBlobClient(logicalPath);
-            // Delete the blob
-            await blobClient.DeleteAsync();
+            await blobContainerAdapter.DeleteAsync(GetRelativePath(logicalPath));
         }
 
         public async Task<string> ComputeMD5Checksum(string logicalPath)
@@ -141,7 +123,21 @@ namespace Beztek.Facade.Storage.Providers
             return Convert.ToBase64String(md5.ComputeHash(stream));
         }
 
-        // Internal
+        private static IAzureBlobContainerAdapter CreateAdapter(AzureBlobStorageProviderConfig config)
+        {
+            BlobContainerClient containerClient;
+            if (config.AccountKey != null)
+            {
+                BlobServiceClient blobServiceClient = new BlobServiceClient(config.BlobUri, new StorageSharedKeyCredential(config.AccountName, config.AccountKey));
+                containerClient = blobServiceClient.GetBlobContainerClient(config.ContainerName);
+            }
+            else
+            {
+                containerClient = new BlobContainerClient(config.BlobUri);
+            }
+
+            return new AzureBlobContainerClientAdapter(containerClient);
+        }
 
         private StorageInfo GetStorageInfo(string name, string logicalPath, BlobProperties blobProperties)
         {
@@ -161,13 +157,6 @@ namespace Beztek.Facade.Storage.Providers
             return logicalPath[index..];
         }
 
-        // This returns the blob client from rom the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
-        private BlobClient GetBlobClient(string logicalPath)
-        {
-            return blobContainerClient.GetBlobClient($"{GetRelativePath(logicalPath)}");
-        }
-
-        // This returns the relative path from the logical path: https://<store-name>.blob.core.windows.net/<container-name>/<relative path>
         private string GetRelativePath(string logicalPath)
         {
             if (!logicalPath.EndsWith("/")) logicalPath = $"{logicalPath}/";
@@ -181,12 +170,11 @@ namespace Beztek.Facade.Storage.Providers
 
         private async Task<Stream> ReadStorageAsync(string logicalPath)
         {
-            BlobClient blobClient = GetBlobClient(logicalPath);
-            if (!await blobClient.ExistsAsync())
+            string blobName = GetRelativePath(logicalPath);
+            if (!await blobContainerAdapter.BlobExistsAsync(blobName))
                 throw new Exception($"Unable to find {logicalPath}");
 
-            var response = await blobClient.DownloadAsync();
-            return await Task.FromResult(new StreamReader(response.Value.Content).BaseStream);
+            return await blobContainerAdapter.OpenReadAsync(blobName);
         }
     }
 }

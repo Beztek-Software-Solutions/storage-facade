@@ -6,23 +6,26 @@ namespace Beztek.Facade.Storage
     using System.Collections.Generic;
     using System.Text.RegularExpressions;
 
+    /// <summary>Optional filter applied when enumerating storage objects.</summary>
     public class StorageFilter
     {
+        /// <summary>Regex patterns matched against <see cref="StorageInfo.LogicalPath"/>.</summary>
         public List<string> RegexPatterns { get; set; }
 
+        /// <summary>File extensions to include (case-insensitive suffix match on <see cref="StorageInfo.Name"/>).</summary>
         public List<string> Extensions { get; set; }
 
+        /// <summary>Half-open UTC interval `[Item1, Item2)` matched against <see cref="StorageInfo.Timestamp"/>.</summary>
         public Tuple<DateTime, DateTime> DateRange { get; set; }
 
+        /// <summary>Returns true when <paramref name="storageInfo"/> satisfies all configured criteria (or when filter is null).</summary>
         public static bool IsMatch(StorageFilter storageFilter, StorageInfo storageInfo)
         {
-            // Nothing to match if there is no storage filter. so return success.
             if (storageFilter == null)
                 return true;
 
             bool isMatch = true;
 
-            // Match Regex Patterns
             if (isMatch && storageFilter.RegexPatterns != null && storageFilter.RegexPatterns.Count > 0)
             {
                 foreach (string pattern in storageFilter.RegexPatterns)
@@ -36,7 +39,6 @@ namespace Beztek.Facade.Storage
                 }
             }
 
-            // Match extensions
             if (isMatch && storageFilter.Extensions != null && storageFilter.Extensions.Count > 0)
             {
                 foreach (string extension in storageFilter.Extensions)

@@ -2,12 +2,18 @@
 
 namespace Beztek.Facade.Storage
 {
+    /// <summary>Supported backing store kinds for <see cref="IStorageFacade"/>.</summary>
     public enum StorageFacadeType
     {
+        /// <summary>Local filesystem paths.</summary>
         LocalFileStore,
+        /// <summary>SMB/CIFS network share (UNC paths).</summary>
         SMBNetworkStore,
+        /// <summary>Azure Blob Storage container.</summary>
         AzureBlobStore,
+        /// <summary>Amazon S3 bucket.</summary>
         AmazonS3Store,
+        /// <summary>Prefix-routed combination of multiple stores.</summary>
         ComboStore
     }
 }

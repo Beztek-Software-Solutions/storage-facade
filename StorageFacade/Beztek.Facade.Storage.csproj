@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <id>Beztek.Facade.Storage</id>
-    <version>1.2.9</version>
+    <version>1.3.0</version>
     <authors>Peter Thomas</authors>
     <owners>Beztek Software Solutions</owners>
     <projectUrl>https://github.com/Beztek-Software-Solutions/storage-facade</projectUrl>
@@ -26,9 +27,12 @@
 
   <ItemGroup>
     <None Include="..\LICENSE" Pack="true" PackagePath="" />
-    <None Include="..\README.md" Pack="true" PackagePath="" />
+    <None Include="README.md" Pack="true" PackagePath="" />
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>Beztek.Facade.Storage.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 
