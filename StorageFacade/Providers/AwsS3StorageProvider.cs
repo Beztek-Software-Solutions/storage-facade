@@ -11,6 +11,7 @@ namespace Beztek.Facade.Storage.Providers
     using Amazon.Runtime;
     using Amazon.S3;
     using Amazon.S3.Model;
+    using Amazon.S3.Transfer;
     using Beztek.Facade.Storage;
 
     /// <summary>
@@ -20,6 +21,7 @@ namespace Beztek.Facade.Storage.Providers
     {
         private AwsS3StorageProviderConfig AwsS3StorageProviderConfig { get; }
         private IAmazonS3 AwsS3Client;
+        private ITransferUtility TransferUtility;
 
         internal AwsS3StorageProvider(AwsS3StorageProviderConfig awsS3StorageProviderConfig)
             : this(awsS3StorageProviderConfig, CreateClient(awsS3StorageProviderConfig))
@@ -27,9 +29,18 @@ namespace Beztek.Facade.Storage.Providers
         }
 
         internal AwsS3StorageProvider(AwsS3StorageProviderConfig awsS3StorageProviderConfig, IAmazonS3 awsS3Client)
+            : this(awsS3StorageProviderConfig, awsS3Client, new TransferUtility(awsS3Client))
+        {
+        }
+
+        internal AwsS3StorageProvider(
+            AwsS3StorageProviderConfig awsS3StorageProviderConfig,
+            IAmazonS3 awsS3Client,
+            ITransferUtility transferUtility)
         {
             AwsS3StorageProviderConfig = awsS3StorageProviderConfig;
             AwsS3Client = awsS3Client;
+            TransferUtility = transferUtility;
         }
 
         public string GetName()
@@ -104,40 +115,50 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            // AWSSDK.S3 4.x requires a known ContentLength for PutObject. Non-seekable streams
-            // (IFormFile bodies, CryptoStream from StorageFacade) must be buffered first.
-            Stream uploadStream = inputStream;
-            bool disposeUploadStream = false;
-            try
+            string key = GetRelativePath(logicalPath);
+
+            // Known length: simple PutObject with ContentLength (AWSSDK.S3 4.x requires it).
+            // Unknown length: TransferUtility multipart uploads in part-sized chunks without
+            // buffering the entire object (PutObject chunked encoding still needs ContentLength
+            // when the stream does not report Length).
+            if (TryGetRemainingLength(inputStream, out long contentLength))
             {
-                if (!inputStream.CanSeek)
-                {
-                    var buffer = new MemoryStream();
-                    await inputStream.CopyToAsync(buffer).ConfigureAwait(false);
-                    buffer.Position = 0;
-                    uploadStream = buffer;
-                    disposeUploadStream = true;
-                }
-
-                long contentLength = uploadStream.CanSeek
-                    ? uploadStream.Length - uploadStream.Position
-                    : throw new InvalidOperationException("Upload stream must be seekable after buffering.");
-
                 var putRequest = new PutObjectRequest
                 {
                     BucketName = AwsS3StorageProviderConfig.BucketName,
-                    Key = GetRelativePath(logicalPath),
-                    InputStream = uploadStream,
+                    Key = key,
+                    InputStream = inputStream,
                     AutoCloseStream = false
                 };
                 putRequest.Headers.ContentLength = contentLength;
-
                 await AwsS3Client.PutObjectAsync(putRequest).ConfigureAwait(false);
+                return;
             }
-            finally
+
+            var uploadRequest = new TransferUtilityUploadRequest
             {
-                if (disposeUploadStream)
-                    await uploadStream.DisposeAsync().ConfigureAwait(false);
+                BucketName = AwsS3StorageProviderConfig.BucketName,
+                Key = key,
+                InputStream = inputStream,
+                AutoCloseStream = false
+            };
+            await TransferUtility.UploadAsync(uploadRequest).ConfigureAwait(false);
+        }
+
+        private static bool TryGetRemainingLength(Stream stream, out long contentLength)
+        {
+            contentLength = 0;
+            if (!stream.CanSeek)
+                return false;
+
+            try
+            {
+                contentLength = stream.Length - stream.Position;
+                return true;
+            }
+            catch (NotSupportedException)
+            {
+                return false;
             }
         }
 

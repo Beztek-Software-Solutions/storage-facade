@@ -10,6 +10,7 @@ namespace Beztek.Facade.Storage.Tests
     using System.Threading.Tasks;
     using Amazon.S3;
     using Amazon.S3.Model;
+    using Amazon.S3.Transfer;
     using Beztek.Facade.Storage;
     using Beztek.Facade.Storage.Providers;
     using Moq;
@@ -156,29 +157,26 @@ namespace Beztek.Facade.Storage.Tests
         }
 
         /// <summary>
-        /// AWSSDK.S3 4.x rejects non-seekable multipart/form streams unless ContentLength is set.
-        /// Mimics IFormFile.OpenReadStream() / CryptoStream used by StorageFacade.
+        /// Unknown-length streams use TransferUtility multipart (part-sized chunks), not a full MemoryStream buffer.
+        /// PutObject alone still requires ContentLength when Length is not reported (AWSSDK.S3 4.x).
         /// </summary>
         [Test]
-        public async Task WriteStorageAsync_NonSeekableStream_SetsContentLengthAndUploadsBytes()
+        public async Task WriteStorageAsync_NonSeekableStream_UsesTransferUtilityMultipartUpload()
         {
-            PutObjectRequest captured = null;
-            var mockS3 = new Mock<IAmazonS3>();
-            mockS3.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
-                .Returns((PutObjectRequest req, CancellationToken _) =>
+            TransferUtilityUploadRequest captured = null;
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.Setup(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default))
+                .Returns((TransferUtilityUploadRequest req, CancellationToken _) =>
                 {
                     captured = req;
-                    // Stricter SDK behavior: ContentLength must be known for non-seekable input.
-                    if (req.Headers.ContentLength <= 0 && !(req.InputStream?.CanSeek ?? false))
-                        throw new AmazonS3Exception("MissingContentLength");
-
                     using var ms = new MemoryStream();
                     req.InputStream.CopyTo(ms);
                     Assert.That(ms.ToArray(), Is.EqualTo(Encoding.UTF8.GetBytes("multipart-body")));
-                    return Task.FromResult(new PutObjectResponse());
+                    return Task.CompletedTask;
                 });
 
-            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            var mockS3 = new Mock<IAmazonS3>(MockBehavior.Strict);
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, mockTransfer.Object);
             byte[] payload = Encoding.UTF8.GetBytes("multipart-body");
 
             using var inner = new MemoryStream(payload);
@@ -186,7 +184,10 @@ namespace Beztek.Facade.Storage.Tests
             await provider.WriteStorageAsync("s3://orders/uploads/photo.jpg", nonSeekable);
 
             Assert.That(captured, Is.Not.Null);
-            Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+            Assert.That(captured.BucketName, Is.EqualTo(Bucket));
+            Assert.That(captured.Key, Is.EqualTo("uploads/photo.jpg"));
+            Assert.That(captured.AutoCloseStream, Is.False);
+            mockS3.Verify(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default), Times.Never);
         }
 
         [Test]
@@ -203,7 +204,8 @@ namespace Beztek.Facade.Storage.Tests
                     return Task.FromResult(new PutObjectResponse());
                 });
 
-            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            var mockTransfer = new Mock<ITransferUtility>(MockBehavior.Strict);
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, mockTransfer.Object);
             byte[] payload = Encoding.UTF8.GetBytes("seekable");
 
             using var writeStream = new MemoryStream(payload);
@@ -211,28 +213,26 @@ namespace Beztek.Facade.Storage.Tests
 
             Assert.That(captured, Is.Not.Null);
             Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+            mockTransfer.Verify(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default), Times.Never);
         }
 
         [Test]
-        public async Task StorageFacade_WriteStorageAsync_NonSeekableStream_SucceedsAgainstStrictS3Mock()
+        public async Task StorageFacade_WriteStorageAsync_NonSeekableStream_UsesTransferUtility()
         {
-            // Production path: StorageFacade wraps input in CryptoStream (non-seekable) before PutObject.
-            PutObjectRequest captured = null;
-            var mockS3 = new Mock<IAmazonS3>();
-            mockS3.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
-                .Returns((PutObjectRequest req, CancellationToken _) =>
+            // Production path: StorageFacade wraps input in CryptoStream (non-seekable / unknown length).
+            TransferUtilityUploadRequest captured = null;
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.Setup(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default))
+                .Returns((TransferUtilityUploadRequest req, CancellationToken _) =>
                 {
                     captured = req;
-                    if (req.Headers.ContentLength <= 0 && !(req.InputStream?.CanSeek ?? false))
-                        throw new AmazonS3Exception("MissingContentLength");
-
                     using var ms = new MemoryStream();
                     req.InputStream.CopyTo(ms);
                     Assert.That(ms.ToArray(), Is.EqualTo(Encoding.UTF8.GetBytes("form-file")));
-                    return Task.FromResult(new PutObjectResponse());
+                    return Task.CompletedTask;
                 });
 
-            var facade = new StorageFacade(new AwsS3StorageProvider(_config, mockS3.Object));
+            var facade = new StorageFacade(new AwsS3StorageProvider(_config, Mock.Of<IAmazonS3>(), mockTransfer.Object));
             byte[] payload = Encoding.UTF8.GetBytes("form-file");
 
             using var inner = new MemoryStream(payload);
@@ -241,7 +241,7 @@ namespace Beztek.Facade.Storage.Tests
 
             Assert.That(checksum, Is.Not.Null.And.Not.Empty);
             Assert.That(captured, Is.Not.Null);
-            Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+            Assert.That(captured.AutoCloseStream, Is.False);
         }
 
         /// <summary>Forward-only stream with no Length/Position — like multipart request bodies.</summary>
