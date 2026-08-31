@@ -104,15 +104,41 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            var putRequest = new PutObjectRequest
+            // AWSSDK.S3 4.x requires a known ContentLength for PutObject. Non-seekable streams
+            // (IFormFile bodies, CryptoStream from StorageFacade) must be buffered first.
+            Stream uploadStream = inputStream;
+            bool disposeUploadStream = false;
+            try
             {
-                BucketName = AwsS3StorageProviderConfig.BucketName,
-                Key = GetRelativePath(logicalPath),
-                InputStream = inputStream,
-                AutoCloseStream = false
-            };
+                if (!inputStream.CanSeek)
+                {
+                    var buffer = new MemoryStream();
+                    await inputStream.CopyToAsync(buffer).ConfigureAwait(false);
+                    buffer.Position = 0;
+                    uploadStream = buffer;
+                    disposeUploadStream = true;
+                }
 
-            await AwsS3Client.PutObjectAsync(putRequest);
+                long contentLength = uploadStream.CanSeek
+                    ? uploadStream.Length - uploadStream.Position
+                    : throw new InvalidOperationException("Upload stream must be seekable after buffering.");
+
+                var putRequest = new PutObjectRequest
+                {
+                    BucketName = AwsS3StorageProviderConfig.BucketName,
+                    Key = GetRelativePath(logicalPath),
+                    InputStream = uploadStream,
+                    AutoCloseStream = false
+                };
+                putRequest.Headers.ContentLength = contentLength;
+
+                await AwsS3Client.PutObjectAsync(putRequest).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (disposeUploadStream)
+                    await uploadStream.DisposeAsync().ConfigureAwait(false);
+            }
         }
 
         public async Task DeleteStorageAsync(string logicalPath)

@@ -154,5 +154,118 @@ namespace Beztek.Facade.Storage.Tests
             await provider.DeleteStorageAsync(path);
             Assert.That(store.ContainsKey("out/data.bin"), Is.False);
         }
+
+        /// <summary>
+        /// AWSSDK.S3 4.x rejects non-seekable multipart/form streams unless ContentLength is set.
+        /// Mimics IFormFile.OpenReadStream() / CryptoStream used by StorageFacade.
+        /// </summary>
+        [Test]
+        public async Task WriteStorageAsync_NonSeekableStream_SetsContentLengthAndUploadsBytes()
+        {
+            PutObjectRequest captured = null;
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
+                .Returns((PutObjectRequest req, CancellationToken _) =>
+                {
+                    captured = req;
+                    // Stricter SDK behavior: ContentLength must be known for non-seekable input.
+                    if (req.Headers.ContentLength <= 0 && !(req.InputStream?.CanSeek ?? false))
+                        throw new AmazonS3Exception("MissingContentLength");
+
+                    using var ms = new MemoryStream();
+                    req.InputStream.CopyTo(ms);
+                    Assert.That(ms.ToArray(), Is.EqualTo(Encoding.UTF8.GetBytes("multipart-body")));
+                    return Task.FromResult(new PutObjectResponse());
+                });
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            byte[] payload = Encoding.UTF8.GetBytes("multipart-body");
+
+            using var inner = new MemoryStream(payload);
+            using var nonSeekable = new NonSeekableStream(inner);
+            await provider.WriteStorageAsync("s3://orders/uploads/photo.jpg", nonSeekable);
+
+            Assert.That(captured, Is.Not.Null);
+            Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+        }
+
+        [Test]
+        public async Task WriteStorageAsync_SeekableStream_SetsContentLengthWithoutRebufferingRequirement()
+        {
+            PutObjectRequest captured = null;
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
+                .Returns((PutObjectRequest req, CancellationToken _) =>
+                {
+                    captured = req;
+                    if (req.Headers.ContentLength <= 0)
+                        throw new AmazonS3Exception("MissingContentLength");
+                    return Task.FromResult(new PutObjectResponse());
+                });
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            byte[] payload = Encoding.UTF8.GetBytes("seekable");
+
+            using var writeStream = new MemoryStream(payload);
+            await provider.WriteStorageAsync("s3://orders/out/seek.bin", writeStream);
+
+            Assert.That(captured, Is.Not.Null);
+            Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+        }
+
+        [Test]
+        public async Task StorageFacade_WriteStorageAsync_NonSeekableStream_SucceedsAgainstStrictS3Mock()
+        {
+            // Production path: StorageFacade wraps input in CryptoStream (non-seekable) before PutObject.
+            PutObjectRequest captured = null;
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), default))
+                .Returns((PutObjectRequest req, CancellationToken _) =>
+                {
+                    captured = req;
+                    if (req.Headers.ContentLength <= 0 && !(req.InputStream?.CanSeek ?? false))
+                        throw new AmazonS3Exception("MissingContentLength");
+
+                    using var ms = new MemoryStream();
+                    req.InputStream.CopyTo(ms);
+                    Assert.That(ms.ToArray(), Is.EqualTo(Encoding.UTF8.GetBytes("form-file")));
+                    return Task.FromResult(new PutObjectResponse());
+                });
+
+            var facade = new StorageFacade(new AwsS3StorageProvider(_config, mockS3.Object));
+            byte[] payload = Encoding.UTF8.GetBytes("form-file");
+
+            using var inner = new MemoryStream(payload);
+            using var nonSeekable = new NonSeekableStream(inner);
+            string checksum = await facade.WriteStorageAsync("s3://orders/uploads/avatar.png", nonSeekable);
+
+            Assert.That(checksum, Is.Not.Null.And.Not.Empty);
+            Assert.That(captured, Is.Not.Null);
+            Assert.That(captured.Headers.ContentLength, Is.EqualTo(payload.Length));
+        }
+
+        /// <summary>Forward-only stream with no Length/Position — like multipart request bodies.</summary>
+        private sealed class NonSeekableStream : Stream
+        {
+            private readonly Stream _inner;
+
+            public NonSeekableStream(Stream inner) => _inner = inner;
+
+            public override bool CanRead => _inner.CanRead;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position
+            {
+                get => throw new NotSupportedException();
+                set => throw new NotSupportedException();
+            }
+
+            public override void Flush() => _inner.Flush();
+            public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
     }
 }
