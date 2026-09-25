@@ -51,50 +51,81 @@ namespace Beztek.Facade.Storage.Providers
 
             try
             {
-                NTStatus status = fileStore.CreateFile(
-                    out directoryHandle,
-                    out FileStatus fileStatus,
-                    @$"{relativePath}",
-                    AccessMask.GENERIC_READ,
-                    FileAttributes.Directory,
-                    ShareAccess.Read | ShareAccess.Write,
-                    CreateDisposition.FILE_OPEN,
-                    CreateOptions.FILE_DIRECTORY_FILE,
-                    null);
+                OpenDirectoryHandle(fileStore, relativePath, logicalPath, out directoryHandle);
+                fileStore.QueryDirectory(
+                    out List<QueryDirectoryFileInformation> fileList,
+                    directoryHandle,
+                    @"*",
+                    FileInformationClass.FileDirectoryInformation);
 
-                if (status != NTStatus.STATUS_SUCCESS)
-                    throw new Exception($"Unable to get the directory handle {logicalPath} - {status} (tried {GetPhysicalPath(logicalPath)})");
-
-                fileStore.QueryDirectory(out List<QueryDirectoryFileInformation> fileList, directoryHandle, @"*", FileInformationClass.FileDirectoryInformation);
-
-                foreach (FileDirectoryInformation fileInfo in fileList)
-                {
-                    StorageInfo storageInfo = GetStorageInfo(relativePath, fileInfo);
-                    if (storageInfo.IsFile)
-                    {
-                        if (StorageFilter.IsMatch(storageFilter, storageInfo))
-                        {
-                            yield return storageInfo;
-                        }
-                    }
-                    else if (isRecursive && (!@".".Equals(storageInfo.Name)) && (!@"..".Equals(storageInfo.Name)))
-                    {
-                        foreach (StorageInfo subStorageInfo in EnumerateStorageInfo(storageInfo.LogicalPath, true, storageFilter))
-                        {
-                            yield return subStorageInfo;
-                        }
-                    }
-                }
-                yield break;
+                foreach (StorageInfo info in EnumerateDirectoryEntries(fileList, relativePath, isRecursive, storageFilter))
+                    yield return info;
             }
             finally
             {
-                // Close the directory handle
                 if (directoryHandle != null)
                     fileStore.CloseFile(directoryHandle);
 
                 fileStore.Disconnect();
                 smbClient.Disconnect();
+            }
+        }
+
+        private IEnumerable<StorageInfo> EnumerateDirectoryEntries(
+            List<QueryDirectoryFileInformation> fileList,
+            string relativePath,
+            bool isRecursive,
+            StorageFilter storageFilter)
+        {
+            foreach (FileDirectoryInformation fileInfo in fileList)
+            {
+                foreach (StorageInfo info in YieldFromDirectoryEntry(relativePath, fileInfo, isRecursive, storageFilter))
+                    yield return info;
+            }
+        }
+
+        private IEnumerable<StorageInfo> YieldFromDirectoryEntry(
+            string relativePath,
+            FileDirectoryInformation fileInfo,
+            bool isRecursive,
+            StorageFilter storageFilter)
+        {
+            StorageInfo storageInfo = GetStorageInfo(relativePath, fileInfo);
+            if (storageInfo.IsFile)
+            {
+                if (StorageFilter.IsMatch(storageFilter, storageInfo))
+                    yield return storageInfo;
+                yield break;
+            }
+
+            if (!isRecursive || storageInfo.Name is "." or "..")
+                yield break;
+
+            foreach (StorageInfo subStorageInfo in EnumerateStorageInfo(storageInfo.LogicalPath, true, storageFilter))
+                yield return subStorageInfo;
+        }
+
+        private void OpenDirectoryHandle(
+            ISMBFileStore fileStore,
+            string relativePath,
+            string logicalPathForError,
+            out object directoryHandle)
+        {
+            NTStatus status = fileStore.CreateFile(
+                out directoryHandle,
+                out FileStatus _,
+                @$"{relativePath}",
+                AccessMask.GENERIC_READ,
+                FileAttributes.Directory,
+                ShareAccess.Read | ShareAccess.Write,
+                CreateDisposition.FILE_OPEN,
+                CreateOptions.FILE_DIRECTORY_FILE,
+                null);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                throw new StorageFacadeException(
+                    $"Unable to get the directory handle {logicalPathForError} - {status} (tried {GetPhysicalPath(logicalPathForError)})");
             }
         }
 
@@ -124,11 +155,11 @@ namespace Beztek.Facade.Storage.Providers
                     null);
 
                 if (status != NTStatus.STATUS_SUCCESS)
-                    throw new Exception($"Unable to get the directory handle {relativeParentPath} - {status}");
+                    throw new StorageFacadeException($"Unable to get the directory handle {relativeParentPath} - {status}");
 
                 fileStore.QueryDirectory(out fileList, directoryHandle, @$"{fileName}", FileInformationClass.FileDirectoryInformation);
                 if (fileList == null || fileList.Count == 0)
-                    throw new Exception($"Unable to get the path to {relativeParentPath} - {status}");
+                    throw new FileNotFoundException($"Unable to get the path to {relativeParentPath} - {status}", logicalPath);
 
                 return GetStorageInfo(relativeParentPath, (FileDirectoryInformation)fileList[0]);
             }
@@ -212,15 +243,21 @@ namespace Beztek.Facade.Storage.Providers
                             status = fileStore.WriteFile(out int numberOfBytesWritten, fileHandle, writeOffset, buffer);
 
                             if (status != NTStatus.STATUS_SUCCESS || numberOfBytesWritten != len)
-                                throw new Exception($"Failed to write to file {relativePath} at share {_storageProviderConfig.ShareName}");
+                                throw new StorageFacadeException($"Failed to write to file {relativePath} at share {_storageProviderConfig.ShareName}");
 
                             writeOffset += len;
                         }
+
+                        var eof = new FileEndOfFileInformation { EndOfFile = writeOffset };
+                        status = fileStore.SetFileInformation(fileHandle, eof);
+                        if (status != NTStatus.STATUS_SUCCESS)
+                            throw new StorageFacadeException($"Failed to set end-of-file for {relativePath} at share {_storageProviderConfig.ShareName}: {status}");
+
                         status = fileStore.CloseFile(fileHandle);
                     }
                     else
                     {
-                        throw new Exception($"Unable to get file handle to {logicalPath} - {status}");
+                        throw new StorageFacadeException($"Unable to get file handle to {logicalPath} - {status}");
                     }
                 });
             }
@@ -258,14 +295,14 @@ namespace Beztek.Facade.Storage.Providers
                             null);
 
                         if (status != NTStatus.STATUS_SUCCESS)
-                            throw new Exception($"Unable to delete {logicalPath} - {status}");
+                            throw new StorageFacadeException($"Unable to delete {logicalPath} - {status}");
 
                         FileDispositionInformation fileDispositionInformation = new FileDispositionInformation();
                         fileDispositionInformation.DeletePending = true;
                         status = fileStore.SetFileInformation(fileHandle, fileDispositionInformation);
 
                         if (status != NTStatus.STATUS_SUCCESS)
-                            throw new Exception($"Unable to delete {logicalPath} - {status}");
+                            throw new StorageFacadeException($"Unable to delete {logicalPath} - {status}");
                     }
                     finally
                     {
@@ -314,7 +351,7 @@ namespace Beztek.Facade.Storage.Providers
             DateTime lastUpdated = fileInfo.LastWriteTime;
             DateTime created = fileInfo.CreationTime;
             currStorageInfo.Timestamp = (lastUpdated.CompareTo(created) >= 0) ? lastUpdated : created;
-            currStorageInfo.SizeBytes = fileInfo.AllocationSize;
+            currStorageInfo.SizeBytes = fileInfo.EndOfFile;
 
             return currStorageInfo;
         }
@@ -360,7 +397,7 @@ namespace Beztek.Facade.Storage.Providers
         {
             ISMBFileStore fileStore = smb2Client.TreeConnect(shareName, out NTStatus status);
             if (status != NTStatus.STATUS_SUCCESS)
-                throw new Exception($"Unable to load the file share '{shareName}': {status}");
+                throw new StorageFacadeException($"Unable to load the file share '{shareName}': {status}");
 
             return fileStore;
         }
@@ -382,54 +419,71 @@ namespace Beztek.Facade.Storage.Providers
 
             try
             {
-                // Open the file
-                fileStore.CreateFile(
-                    out fileHandle,
-                    out FileStatus fileStatus,
-                    relativePath,
-                    AccessMask.GENERIC_READ,
-                    FileAttributes.Normal,
-                    ShareAccess.Read,
-                    CreateDisposition.FILE_OPEN,
-                    CreateOptions.FILE_NON_DIRECTORY_FILE,
-                    null
-                );
-
-                if (fileStatus != FileStatus.FILE_OPENED)
-                    throw new Exception($"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}");
-
-                // Read file into MemoryStream
-                MemoryStream ms = new MemoryStream();
-                long offset = 0;
-                NTStatus status = default;
-                while (status != NTStatus.STATUS_END_OF_FILE)
-                {
-                    status = fileStore.ReadFile(out var bytesRead, fileHandle, offset, 64 * 1024);
-
-                    if (status != NTStatus.STATUS_SUCCESS && status != NTStatus.STATUS_END_OF_FILE)
-                        throw new Exception($"Failed to read to file {relativePath} at share {_storageProviderConfig.ShareName} - status was {status}");
-
-                    if (bytesRead == null || bytesRead.Length == 0)
-                        break;
-
-                    ms.Write(bytesRead);
-                    offset += bytesRead.Length;
-                }
-
-                // Reset stream position to start
-                ms.Seek(0, SeekOrigin.Begin);
-
+                OpenFileForRead(fileStore, relativePath, fileName, relativeParentPath, logicalPath, out fileHandle);
+                MemoryStream ms = ReadFileContents(fileStore, fileHandle, relativePath);
                 return await Task.FromResult(ms);
             }
             finally
             {
-                // Close the file handle
                 if (fileHandle != null)
                     fileStore.CloseFile(fileHandle);
 
                 fileStore.Disconnect();
                 smbClient.Disconnect();
             }
+        }
+
+        private static void OpenFileForRead(
+            ISMBFileStore fileStore,
+            string relativePath,
+            string fileName,
+            string relativeParentPath,
+            string logicalPath,
+            out object fileHandle)
+        {
+            fileStore.CreateFile(
+                out fileHandle,
+                out FileStatus fileStatus,
+                relativePath,
+                AccessMask.GENERIC_READ,
+                FileAttributes.Normal,
+                ShareAccess.Read,
+                CreateDisposition.FILE_OPEN,
+                CreateOptions.FILE_NON_DIRECTORY_FILE,
+                null);
+
+            if (fileStatus != FileStatus.FILE_OPENED)
+            {
+                throw new FileNotFoundException(
+                    $"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}",
+                    logicalPath);
+            }
+        }
+
+        private MemoryStream ReadFileContents(ISMBFileStore fileStore, object fileHandle, string relativePath)
+        {
+            var ms = new MemoryStream();
+            long offset = 0;
+            NTStatus status = default;
+            while (status != NTStatus.STATUS_END_OF_FILE)
+            {
+                status = fileStore.ReadFile(out var bytesRead, fileHandle, offset, 64 * 1024);
+
+                if (status != NTStatus.STATUS_SUCCESS && status != NTStatus.STATUS_END_OF_FILE)
+                {
+                    throw new StorageFacadeException(
+                        $"Failed to read to file {relativePath} at share {_storageProviderConfig.ShareName} - status was {status}");
+                }
+
+                if (bytesRead == null || bytesRead.Length == 0)
+                    break;
+
+                ms.Write(bytesRead);
+                offset += bytesRead.Length;
+            }
+
+            ms.Seek(0, SeekOrigin.Begin);
+            return ms;
         }
     }
 }

@@ -3,6 +3,7 @@
 namespace Beztek.Facade.Storage.Tests
 {
     using System;
+    using Moq;
     using NUnit.Framework;
 
     [TestFixture]
@@ -69,6 +70,40 @@ namespace Beztek.Facade.Storage.Tests
             Assert.That(facade, Is.Not.Null);
             Assert.That(facade.GetType(), Is.EqualTo(StorageFacadeType.SMBNetworkStore));
             Assert.That(facade.GetName(), Is.EqualTo(@"\\dfs-server\share"));
+        }
+
+        [Test]
+        public void GetStorageFacade_GoogleCloud_ReturnsGcsFacade()
+        {
+            var config = new GoogleCloudStorageProviderConfig("My-Bucket", serviceUri: "http://127.0.0.1:4443/storage/v1/");
+            using IDisposable disposable = (IDisposable)StorageFacadeFactory.GetStorageFacade(config);
+            var facade = (IStorageFacade)disposable;
+
+            Assert.That(facade.GetType(), Is.EqualTo(StorageFacadeType.GoogleCloudStorageStore));
+            Assert.That(facade.GetName(), Is.EqualTo("gs://my-bucket"));
+        }
+
+        [Test]
+        public void GetStorageFacade_AlibabaOss_WithExplicitKeys_ReturnsOssFacade()
+        {
+            var config = new AlibabaOssStorageProviderConfig(
+                "oss-us-west-1.aliyuncs.com",
+                "ak",
+                "secret",
+                "My-Bucket");
+            using IDisposable disposable = (IDisposable)StorageFacadeFactory.GetStorageFacade(config);
+            var facade = (IStorageFacade)disposable;
+
+            Assert.That(facade.GetType(), Is.EqualTo(StorageFacadeType.AlibabaOssStore));
+            Assert.That(facade.GetName(), Is.EqualTo("oss://my-bucket"));
+        }
+
+        [Test]
+        public void StorageFacade_Dispose_IsIdempotent()
+        {
+            var facade = new StorageFacade(Mock.Of<IStorageProvider>());
+            facade.Dispose();
+            facade.Dispose();
         }
     }
 }

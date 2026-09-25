@@ -2,6 +2,8 @@
 
 namespace Beztek.Facade.Storage
 {
+    using System;
+
     /// <summary>
     /// Configuration for the SMB network share provider, including optional manual DFS mapping
     /// via a physical server name when the logical (DFS) server differs.
@@ -22,6 +24,9 @@ namespace Beztek.Facade.Storage
         internal string Password { get; }
         internal int SmbIdleTimeoutSeconds { get; }
 
+        /// <summary>TCP port for Direct SMB (default 445). Use a non-privileged port for container stand-ins.</summary>
+        internal int Port { get; }
+
         /// <summary>
         /// Creates an SMB share configuration. Supports a manual DFS workaround: although SMBLibrary
         /// does not resolve DFS automatically, you can map a logical DFS server name to a physical
@@ -37,8 +42,22 @@ namespace Beztek.Facade.Storage
         /// <param name="password">Authentication password.</param>
         /// <param name="physicalServer">Optional physical host for DFS mapping; defaults to <paramref name="logicalServer"/>.</param>
         /// <param name="smbIdleTimeoutSeconds">Idle seconds before the SMB client is refreshed (default 899).</param>
-        public SMBNetworkStorageProviderConfig(string logicalServer, string shareName, string domain, string username, string password, string physicalServer = null, int smbIdleTimeoutSeconds = 899)
+        /// <param name="port">
+        /// Direct TCP port (default <c>445</c>). Map container 445→host high port for unprivileged live tests.
+        /// </param>
+        public SMBNetworkStorageProviderConfig(
+            string logicalServer,
+            string shareName,
+            string domain,
+            string username,
+            string password,
+            string physicalServer = null,
+            int smbIdleTimeoutSeconds = 899,
+            int port = 445)
         {
+            if (port is < 1 or > 65535)
+                throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be 1–65535.");
+
             this.LogicalServer = logicalServer.ToLower();
             this.PhysicalServer = physicalServer == null ? logicalServer : physicalServer.ToLower();
             this.ShareName = shareName;
@@ -47,6 +66,7 @@ namespace Beztek.Facade.Storage
             this.Username = username;
             this.Password = password;
             this.SmbIdleTimeoutSeconds = smbIdleTimeoutSeconds;
+            this.Port = port;
         }
     }
 }

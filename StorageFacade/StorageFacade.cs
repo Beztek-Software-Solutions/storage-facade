@@ -12,9 +12,10 @@ namespace Beztek.Facade.Storage
     /// Default <see cref="IStorageFacade"/> implementation that wraps an <see cref="IStorageProvider"/>
     /// and computes MD5 checksums on write.
     /// </summary>
-    public class StorageFacade : IStorageFacade
+    public class StorageFacade : IStorageFacade, IDisposable
     {
-        private IStorageProvider storageProvider;
+        private readonly IStorageProvider storageProvider;
+        private bool _disposed;
 
         /// <summary>Creates a facade over the given provider.</summary>
         public StorageFacade(IStorageProvider storageProvider)
@@ -52,7 +53,8 @@ namespace Beztek.Facade.Storage
                 string outputChecksum = await storageProvider.ComputeMD5Checksum(storagePath);
                 if (!inputChecksum.Equals(outputChecksum))
                 {
-                    throw new Exception($"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
+                    throw new StorageFacadeException(
+                        $"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
                 }
             }
 
@@ -66,5 +68,14 @@ namespace Beztek.Facade.Storage
         /// <inheritdoc/>
         public async Task<string> ComputeMD5Checksum(string storagePath)
             => await storageProvider.ComputeMD5Checksum(storagePath);
+
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            (storageProvider as IDisposable)?.Dispose();
+        }
     }
 }

@@ -8,7 +8,6 @@ namespace Beztek.Facade.Storage.Providers
     using System.Linq;
     using System.Security.Cryptography;
     using System.Threading.Tasks;
-    using SMBLibrary.Services;
 
     /// <summary>
     /// Implements the storage provider for the local filesystem

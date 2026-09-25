@@ -1,4 +1,4 @@
-﻿// Copyright (c) Beztek Software Solutions. All rights reserved.
+// Copyright (c) Beztek Software Solutions. All rights reserved.
 
 namespace Beztek.Facade.Storage.Providers
 {
@@ -16,10 +16,11 @@ namespace Beztek.Facade.Storage.Providers
     /// <summary>
     /// Storage provider for Azure Blob Storage.
     /// </summary>
-    internal class AzureBlobStorageProvider : IStorageProvider
+    internal class AzureBlobStorageProvider : IStorageProvider, IDisposable
     {
         private AzureBlobStorageProviderConfig azureBlobStorageProviderConfig { get; }
         private IAzureBlobContainerAdapter blobContainerAdapter;
+        private bool _disposed;
 
         internal AzureBlobStorageProvider(AzureBlobStorageProviderConfig azureBlobStorageProviderConfig)
             : this(azureBlobStorageProviderConfig, CreateAdapter(azureBlobStorageProviderConfig))
@@ -45,53 +46,54 @@ namespace Beztek.Facade.Storage.Providers
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string logicalPath, bool isRecursive = false, StorageFilter storageFilter = null)
         {
             string prefix = $"{GetRelativePath(logicalPath)}/";
-            if ("/".Equals(prefix)) prefix = "";
-            if (this.azureBlobStorageProviderConfig.IsHierarchicalNamespace)
-            {
-                foreach (BlobHierarchyItem blobOrFolder in blobContainerAdapter.GetBlobsByHierarchy(prefix))
-                {
-                    if (blobOrFolder.IsBlob)
-                    {
-                        BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(blobOrFolder.Blob.Name);
-                        string path = blobOrFolder.Blob.Name;
-                        string[] paths = path.Split("/");
-                        string name = paths[paths.Length - 1];
-                        StorageInfo storageInfo = GetStorageInfo(name, $"{GetName()}/{path}", blobProperties);
-                        if (StorageFilter.IsMatch(storageFilter, storageInfo))
-                            yield return storageInfo;
-                    }
-                    else if (isRecursive)
-                    {
-                        foreach (StorageInfo storageInfo in EnumerateStorageInfo(blobOrFolder.Prefix, true, storageFilter))
-                        {
-                            yield return storageInfo;
-                        }
-                    }
-                }
-                yield break;
-            }
-            else
-            {
-                foreach (BlobItem blobItem in blobContainerAdapter.GetBlobs(prefix))
-                {
-                    if (blobItem.Name.Split("/").Length > prefix.Split("/").Length)
-                    {
-                        if (!isRecursive)
-                        {
-                            continue;
-                        }
-                    }
+            if ("/".Equals(prefix))
+                prefix = "";
 
-                    BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(blobItem.Name);
-                    string path = blobItem.Name;
-                    string[] paths = path.Split("/");
-                    string name = paths[paths.Length - 1];
-                    StorageInfo storageInfo = GetStorageInfo(name, $"{GetName()}/{path}", blobProperties);
+            return azureBlobStorageProviderConfig.IsHierarchicalNamespace
+                ? EnumerateHierarchical(prefix, isRecursive, storageFilter)
+                : EnumerateFlat(prefix, isRecursive, storageFilter);
+        }
+
+        private IEnumerable<StorageInfo> EnumerateHierarchical(string prefix, bool isRecursive, StorageFilter storageFilter)
+        {
+            foreach (BlobHierarchyItem blobOrFolder in blobContainerAdapter.GetBlobsByHierarchy(prefix))
+            {
+                if (blobOrFolder.IsBlob)
+                {
+                    StorageInfo storageInfo = ToStorageInfoFromBlobName(blobOrFolder.Blob.Name);
                     if (StorageFilter.IsMatch(storageFilter, storageInfo))
                         yield return storageInfo;
+                    continue;
                 }
-                yield break;
+
+                if (!isRecursive || string.IsNullOrEmpty(blobOrFolder.Prefix))
+                    continue;
+
+                string childLogical = $"{GetName()}/{blobOrFolder.Prefix.TrimEnd('/')}";
+                foreach (StorageInfo storageInfo in EnumerateStorageInfo(childLogical, true, storageFilter))
+                    yield return storageInfo;
             }
+        }
+
+        private IEnumerable<StorageInfo> EnumerateFlat(string prefix, bool isRecursive, StorageFilter storageFilter)
+        {
+            int prefixDepth = prefix.Split('/').Length;
+            foreach (BlobItem blobItem in blobContainerAdapter.GetBlobs(prefix))
+            {
+                if (!isRecursive && blobItem.Name.Split('/').Length > prefixDepth)
+                    continue;
+
+                StorageInfo storageInfo = ToStorageInfoFromBlobName(blobItem.Name);
+                if (StorageFilter.IsMatch(storageFilter, storageInfo))
+                    yield return storageInfo;
+            }
+        }
+
+        private StorageInfo ToStorageInfoFromBlobName(string blobName)
+        {
+            BlobProperties blobProperties = blobContainerAdapter.GetBlobProperties(blobName);
+            string name = CloudLogicalPath.GetLeafName(blobName);
+            return GetStorageInfo(name, $"{GetName()}/{blobName}", blobProperties);
         }
 
         public StorageInfo GetStorageInfo(string logicalPath)
@@ -126,7 +128,12 @@ namespace Beztek.Facade.Storage.Providers
         private static IAzureBlobContainerAdapter CreateAdapter(AzureBlobStorageProviderConfig config)
         {
             BlobContainerClient containerClient;
-            if (config.AccountKey != null)
+            if (!string.IsNullOrEmpty(config.ConnectionString))
+            {
+                var blobServiceClient = new BlobServiceClient(config.ConnectionString);
+                containerClient = blobServiceClient.GetBlobContainerClient(config.ContainerName);
+            }
+            else if (config.AccountKey != null)
             {
                 BlobServiceClient blobServiceClient = new BlobServiceClient(config.BlobUri, new StorageSharedKeyCredential(config.AccountName, config.AccountKey));
                 containerClient = blobServiceClient.GetBlobContainerClient(config.ContainerName);
@@ -152,27 +159,24 @@ namespace Beztek.Facade.Storage.Providers
         }
 
         private string GetNameFromLogicalPath(string logicalPath)
-        {
-            int index = logicalPath.LastIndexOf("/") + 1;
-            return logicalPath[index..];
-        }
+            => CloudLogicalPath.GetLeafName(logicalPath);
 
         private string GetRelativePath(string logicalPath)
+            => CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
+
+        public void Dispose()
         {
-            if (!logicalPath.EndsWith("/")) logicalPath = $"{logicalPath}/";
-            int uriLength = GetName().Length;
-            int logicalPathLength = logicalPath.Length;
-            string currPath = logicalPath.Substring(uriLength + 1, logicalPathLength - uriLength - 1);
-            if (currPath.StartsWith("/")) currPath = currPath[1..];
-            if (currPath.EndsWith("/")) currPath = currPath[..^1];
-            return currPath;
+            if (_disposed)
+                return;
+            _disposed = true;
+            (blobContainerAdapter as IDisposable)?.Dispose();
         }
 
         private async Task<Stream> ReadStorageAsync(string logicalPath)
         {
             string blobName = GetRelativePath(logicalPath);
             if (!await blobContainerAdapter.BlobExistsAsync(blobName))
-                throw new Exception($"Unable to find {logicalPath}");
+                throw new FileNotFoundException($"Unable to find {logicalPath}", logicalPath);
 
             return await blobContainerAdapter.OpenReadAsync(blobName);
         }

@@ -24,42 +24,45 @@ namespace Beztek.Facade.Storage
             if (storageFilter == null)
                 return true;
 
-            bool isMatch = true;
+            return MatchesAnyRegex(storageFilter.RegexPatterns, storageInfo.LogicalPath)
+                && MatchesAnyExtension(storageFilter.Extensions, storageInfo.Name)
+                && MatchesDateRange(storageFilter.DateRange, storageInfo.Timestamp);
+        }
 
-            if (isMatch && storageFilter.RegexPatterns != null && storageFilter.RegexPatterns.Count > 0)
+        private static bool MatchesAnyRegex(List<string> patterns, string logicalPath)
+        {
+            if (patterns == null || patterns.Count == 0)
+                return true;
+
+            foreach (string pattern in patterns)
             {
-                foreach (string pattern in storageFilter.RegexPatterns)
-                {
-                    if (Regex.Match(storageInfo.LogicalPath, pattern).Success)
-                    {
-                        isMatch = true;
-                        break;
-                    }
-                    isMatch = false;
-                }
+                if (Regex.IsMatch(logicalPath, pattern))
+                    return true;
             }
 
-            if (isMatch && storageFilter.Extensions != null && storageFilter.Extensions.Count > 0)
+            return false;
+        }
+
+        private static bool MatchesAnyExtension(List<string> extensions, string name)
+        {
+            if (extensions == null || extensions.Count == 0)
+                return true;
+
+            foreach (string extension in extensions)
             {
-                foreach (string extension in storageFilter.Extensions)
-                {
-                    if (storageInfo.Name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
-                    {
-                        isMatch = true;
-                        break;
-                    }
-                    isMatch = false;
-                }
+                if (name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+                    return true;
             }
-            if (isMatch && storageFilter.DateRange != null)
-            {
-                isMatch = storageInfo.Timestamp >= storageFilter.DateRange.Item1;
-                if (isMatch)
-                {
-                    isMatch = storageInfo.Timestamp < storageFilter.DateRange.Item2;
-                }
-            }
-            return isMatch;
+
+            return false;
+        }
+
+        private static bool MatchesDateRange(Tuple<DateTime, DateTime> dateRange, DateTime timestamp)
+        {
+            if (dateRange == null)
+                return true;
+
+            return timestamp >= dateRange.Item1 && timestamp < dateRange.Item2;
         }
     }
 }

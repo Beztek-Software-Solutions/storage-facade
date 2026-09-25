@@ -81,6 +81,22 @@ namespace Beztek.Facade.Storage.Tests
         }
 
         [Test]
+        public async Task RoutesWrite_WhenPathCasingDiffersFromRegisteredPrefix()
+        {
+            IStorageFacade s3 = MockStorageProviderBuilder.CreateS3Facade("orders");
+            using var combo = new ComboStorageFacade(new List<IStorageFacade> { s3 });
+
+            // Config Name is typically lowercased; callers may use mixed case.
+            string path = "S3://ORDERS/invoices/mixed.pdf";
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("mixed")))
+                await combo.WriteStorageAsync(path, stream, createParentDirectories: true);
+
+            StorageInfo info = combo.GetStorageInfo(path);
+            using var reader = new StreamReader(await combo.ReadStorageAsync(info));
+            Assert.That(reader.ReadToEnd(), Is.EqualTo("mixed"));
+        }
+
+        [Test]
         public async Task ComputeMD5Checksum_DelegatesToRoutedFacade()
         {
             var mockS3 = new Mock<IStorageFacade>();

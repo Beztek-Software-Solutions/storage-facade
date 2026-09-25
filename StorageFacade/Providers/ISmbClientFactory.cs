@@ -24,14 +24,16 @@ namespace Beztek.Facade.Storage.Providers
 
         public ISMBClient CreateConnectedClient()
         {
-            var smbClient = new SMB2Client();
-            bool isConnected = smbClient.Connect(_config.PhysicalServer, SMBTransportType.DirectTCPTransport);
+            var smbClient = new PortAwareSmb2Client();
+            bool isConnected = smbClient.Connect(_config.PhysicalServer, _config.Port);
             if (!isConnected)
-                throw new System.Exception($"Unable to connect to '{_config.LogicalServer}'");
+                throw new StorageFacadeException(
+                    $"Unable to connect to '{_config.LogicalServer}' on TCP {_config.Port}");
 
             NTStatus status = smbClient.Login(_config.Domain, _config.Username, _config.Password, AuthenticationMethod.NTLMv2);
             if (status != NTStatus.STATUS_SUCCESS)
-                throw new System.Exception($"Unable to authenticate as '{_config.Username}' in domain '{_config.Domain}'");
+                throw new StorageFacadeException(
+                    $"Unable to authenticate as '{_config.Username}' in domain '{_config.Domain}'");
 
             return smbClient;
         }

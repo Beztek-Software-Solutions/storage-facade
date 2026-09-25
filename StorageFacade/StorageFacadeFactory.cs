@@ -12,7 +12,7 @@ namespace Beztek.Facade.Storage
         /// <summary>
         /// Creates a storage facade for the given provider configuration.
         /// </summary>
-        /// <param name="storageProviderConfig">Provider-specific configuration (local, SMB, Azure, or S3).</param>
+        /// <param name="storageProviderConfig">Provider-specific configuration (local, SMB, Azure, S3, GCS, or OSS).</param>
         /// <returns>A facade wrapping the selected provider.</returns>
         public static IStorageFacade GetStorageFacade(IStorageProviderConfig storageProviderConfig)
         {
@@ -33,6 +33,14 @@ namespace Beztek.Facade.Storage
             else if (StorageFacadeType.AmazonS3Store == storageProviderConfig.StorageFacadeType)
             {
                 return new StorageFacade(new AwsS3StorageProvider((AwsS3StorageProviderConfig)storageProviderConfig));
+            }
+            else if (StorageFacadeType.GoogleCloudStorageStore == storageProviderConfig.StorageFacadeType)
+            {
+                return new StorageFacade(new GoogleCloudStorageProvider((GoogleCloudStorageProviderConfig)storageProviderConfig));
+            }
+            else if (StorageFacadeType.AlibabaOssStore == storageProviderConfig.StorageFacadeType)
+            {
+                return new StorageFacade(new AlibabaOssStorageProvider((AlibabaOssStorageProviderConfig)storageProviderConfig));
             }
 
             return storageFacade;

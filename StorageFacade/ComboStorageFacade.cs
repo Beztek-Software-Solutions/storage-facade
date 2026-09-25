@@ -2,6 +2,7 @@
 
 namespace Beztek.Facade.Storage
 {
+    using System;
     using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
@@ -18,7 +19,7 @@ namespace Beztek.Facade.Storage
     /// </para>
     /// <para>
     /// Routing uses the first registered facade where
-    /// <c>logicalPath.ToLower().StartsWith(entry.Key)</c>. Registration order matters when prefixes
+    /// <c>logicalPath.StartsWith(entry.Key, OrdinalIgnoreCase)</c>. Registration order matters when prefixes
     /// overlap; this is not a longest-prefix match.
     /// </para>
     /// <para>
@@ -28,10 +29,11 @@ namespace Beztek.Facade.Storage
     /// prefix (typical OS paths such as <c>/tmp/file</c> or <c>C:\data\file</c>).
     /// </para>
     /// </remarks>
-    public class ComboStorageFacade : IStorageFacade
+    public class ComboStorageFacade : IStorageFacade, IDisposable
     {
-        private Dictionary<string, IStorageFacade> _storageProviders = new Dictionary<string, IStorageFacade>();
-        private IStorageFacade _defaultStorageFacade;
+        private readonly List<KeyValuePair<string, IStorageFacade>> _storageProviders = new();
+        private readonly IStorageFacade _defaultStorageFacade;
+        private bool _disposed;
 
         /// <summary>
         /// Registers the given facades for prefix-based routing and initializes the default local-file fallback.
@@ -44,7 +46,8 @@ namespace Beztek.Facade.Storage
         {
             foreach (IStorageFacade storageFacade in storageFacades)
             {
-                _storageProviders[storageFacade.GetName()] = storageFacade;
+                _storageProviders.Add(new KeyValuePair<string, IStorageFacade>(
+                    storageFacade.GetName(), storageFacade));
             }
             _defaultStorageFacade = StorageFacadeFactory.GetStorageFacade(new FileStorageProviderConfig());
         }
@@ -79,11 +82,22 @@ namespace Beztek.Facade.Storage
         public async Task<string> ComputeMD5Checksum(string storagePath)
             => await GetStorageFacade(storagePath).ComputeMD5Checksum(storagePath);
 
+        /// <inheritdoc/>
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            foreach (KeyValuePair<string, IStorageFacade> entry in _storageProviders)
+                (entry.Value as IDisposable)?.Dispose();
+            (_defaultStorageFacade as IDisposable)?.Dispose();
+        }
+
         IStorageFacade GetStorageFacade(string logicalPath)
         {
             foreach (KeyValuePair<string, IStorageFacade> entry in _storageProviders)
             {
-                if (logicalPath.ToLower().StartsWith(entry.Key))
+                if (logicalPath.StartsWith(entry.Key, StringComparison.OrdinalIgnoreCase))
                     return entry.Value;
             }
             return _defaultStorageFacade;

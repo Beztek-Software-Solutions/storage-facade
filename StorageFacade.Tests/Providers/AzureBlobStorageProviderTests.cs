@@ -87,6 +87,67 @@ namespace Beztek.Facade.Storage.Tests
         }
 
         [Test]
+        public void EnumerateStorageInfo_HierarchicalNamespace_Recursive_DescendsPrefixes()
+        {
+            var mock = new Mock<IAzureBlobContainerAdapter>();
+            mock.Setup(a => a.GetBlobsByHierarchy("root/"))
+                .Returns(new[]
+                {
+                    BlobsModelFactory.BlobHierarchyItem(prefix: "root/child/", blob: null),
+                });
+            mock.Setup(a => a.GetBlobsByHierarchy("root/child/"))
+                .Returns(new[]
+                {
+                    BlobsModelFactory.BlobHierarchyItem(
+                        prefix: null,
+                        blob: BlobsModelFactory.BlobItem(name: "root/child/file.txt")),
+                });
+            mock.Setup(a => a.GetBlobProperties("root/child/file.txt"))
+                .Returns(BlobsModelFactory.BlobProperties(contentLength: 3, lastModified: DateTimeOffset.UtcNow));
+
+            var provider = new AzureBlobStorageProvider(_hnsConfig, mock.Object);
+            var results = new List<StorageInfo>(
+                provider.EnumerateStorageInfo("https://acct.blob.core.windows.net/data/root", isRecursive: true));
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Name, Is.EqualTo("file.txt"));
+        }
+
+        [Test]
+        public void EnumerateStorageInfo_FlatPrefix_NonRecursive_SkipsNestedBlobs()
+        {
+            var mock = new Mock<IAzureBlobContainerAdapter>();
+            mock.Setup(a => a.GetBlobs("reports/"))
+                .Returns(new[]
+                {
+                    BlobsModelFactory.BlobItem("reports/summary.pdf"),
+                    BlobsModelFactory.BlobItem("reports/2024/jan.pdf"),
+                });
+            mock.Setup(a => a.GetBlobProperties("reports/summary.pdf"))
+                .Returns(BlobsModelFactory.BlobProperties(contentLength: 10, lastModified: DateTimeOffset.UtcNow));
+
+            var provider = new AzureBlobStorageProvider(_flatConfig, mock.Object);
+            var results = new List<StorageInfo>(
+                provider.EnumerateStorageInfo("https://acct.blob.core.windows.net/data/reports", isRecursive: false));
+
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Name, Is.EqualTo("summary.pdf"));
+        }
+
+        [Test]
+        public async Task ComputeMD5Checksum_ReadsViaAdapter()
+        {
+            var mock = new Mock<IAzureBlobContainerAdapter>();
+            mock.Setup(a => a.BlobExistsAsync("a.txt")).ReturnsAsync(true);
+            mock.Setup(a => a.OpenReadAsync("a.txt"))
+                .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes("hash-me")));
+
+            using var provider = new AzureBlobStorageProvider(_flatConfig, mock.Object);
+            string checksum = await provider.ComputeMD5Checksum("https://acct.blob.core.windows.net/data/a.txt");
+            Assert.That(checksum, Is.Not.Null.And.Not.Empty);
+        }
+
+        [Test]
         public async Task ReadWriteDelete_UsesMockedBlobAdapter()
         {
             var store = new Dictionary<string, byte[]>();
@@ -141,7 +202,7 @@ namespace Beztek.Facade.Storage.Tests
             mock.Setup(a => a.BlobExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
 
             var provider = new AzureBlobStorageProvider(_flatConfig, mock.Object);
-            Assert.ThrowsAsync<Exception>(async () =>
+            Assert.ThrowsAsync<FileNotFoundException>(async () =>
                 await provider.ReadStorageAsync(new StorageInfo { LogicalPath = "https://acct.blob.core.windows.net/data/missing.txt" }));
         }
     }

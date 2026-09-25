@@ -1,4 +1,4 @@
-﻿// Copyright (c) Beztek Software Solutions. All rights reserved.
+// Copyright (c) Beztek Software Solutions. All rights reserved.
 
 namespace Beztek.Facade.Storage.Providers
 {
@@ -7,8 +7,6 @@ namespace Beztek.Facade.Storage.Providers
     using System.IO;
     using System.Security.Cryptography;
     using System.Threading.Tasks;
-    using Amazon;
-    using Amazon.Runtime;
     using Amazon.S3;
     using Amazon.S3.Model;
     using Amazon.S3.Transfer;
@@ -17,14 +15,17 @@ namespace Beztek.Facade.Storage.Providers
     /// <summary>
     /// Storage provider for Amazon S3.
     /// </summary>
-    internal class AwsS3StorageProvider : IStorageProvider
+    internal class AwsS3StorageProvider : IStorageProvider, IDisposable
     {
         private AwsS3StorageProviderConfig AwsS3StorageProviderConfig { get; }
         private IAmazonS3 AwsS3Client;
         private ITransferUtility TransferUtility;
+        private bool _disposed;
 
         internal AwsS3StorageProvider(AwsS3StorageProviderConfig awsS3StorageProviderConfig)
-            : this(awsS3StorageProviderConfig, CreateClient(awsS3StorageProviderConfig))
+            : this(
+                awsS3StorageProviderConfig,
+                awsS3StorageProviderConfig.S3ClientCreator.CreateClient(awsS3StorageProviderConfig))
         {
         }
 
@@ -79,7 +80,7 @@ namespace Beztek.Facade.Storage.Providers
                     else
                     {
                         string currPath = s3Object.Key;
-                        if (currPath == $"{prefix}/{GetNameFromLogicalPath(currPath)}")
+                        if (currPath == $"{prefix}/{CloudLogicalPath.GetLeafName(currPath)}")
                         {
                             yield return GetStorageInfo(s3Object);
                         }
@@ -93,8 +94,8 @@ namespace Beztek.Facade.Storage.Providers
 
         public StorageInfo GetStorageInfo(string logicalPath)
         {
-            string name = GetNameFromLogicalPath(logicalPath);
-            string relativePath = $"{GetRelativePath(logicalPath)}";
+            string name = CloudLogicalPath.GetLeafName(logicalPath);
+            string relativePath = CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
             Task<GetObjectMetadataResponse> task = AwsS3Client.GetObjectMetadataAsync(AwsS3StorageProviderConfig.BucketName, relativePath);
             task.Wait();
             GetObjectMetadataResponse response = task.Result;
@@ -115,7 +116,7 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task WriteStorageAsync(string logicalPath, Stream inputStream, bool createParentDirectories = false)
         {
-            string key = GetRelativePath(logicalPath);
+            string key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
 
             // Known length: simple PutObject with ContentLength (AWSSDK.S3 4.x requires it).
             // Unknown length: TransferUtility multipart uploads in part-sized chunks without
@@ -167,7 +168,7 @@ namespace Beztek.Facade.Storage.Providers
             var deleteRequest = new DeleteObjectRequest
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,
-                Key = GetRelativePath(logicalPath)
+                Key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath)
             };
 
             await AwsS3Client.DeleteObjectAsync(deleteRequest);
@@ -180,11 +181,13 @@ namespace Beztek.Facade.Storage.Providers
             return Convert.ToBase64String(md5.ComputeHash(stream));
         }
 
-        private static IAmazonS3 CreateClient(AwsS3StorageProviderConfig config)
+        public void Dispose()
         {
-            var awsCredentials = new BasicAWSCredentials(config.AccessKeyId, config.SecretAccessKey);
-            var regionEndpoint = RegionEndpoint.GetBySystemName(config.RegionName);
-            return new AmazonS3Client(awsCredentials, regionEndpoint);
+            if (_disposed)
+                return;
+            _disposed = true;
+            (TransferUtility as IDisposable)?.Dispose();
+            AwsS3Client?.Dispose();
         }
 
         private StorageInfo GetStorageInfo(S3Object s3Object)
@@ -192,36 +195,22 @@ namespace Beztek.Facade.Storage.Providers
             return new StorageInfo
             {
                 IsFile = true,
-                Name = GetNameFromLogicalPath(s3Object.Key),
+                Name = CloudLogicalPath.GetLeafName(s3Object.Key),
                 LogicalPath = $"{GetName()}/{s3Object.Key}",
                 Timestamp = (DateTime)s3Object.LastModified,
                 SizeBytes = (long)s3Object.Size
             };
         }
 
-        private string GetNameFromLogicalPath(string logicalPath)
-        {
-            int index = logicalPath.LastIndexOf("/") + 1;
-            return logicalPath[index..];
-        }
-
         private string GetRelativePath(string logicalPath)
-        {
-            if (!logicalPath.EndsWith("/")) logicalPath = $"{logicalPath}/";
-            int uriLength = GetName().Length;
-            int logicalPathLength = logicalPath.Length;
-            string currPath = logicalPath.Substring(uriLength + 1, logicalPathLength - uriLength - 1);
-            if (currPath.StartsWith("/")) currPath = currPath[1..];
-            if (currPath.EndsWith("/")) currPath = currPath[..^1];
-            return currPath;
-        }
+            => CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
 
         private async Task<Stream> ReadStorageAsync(string logicalPath)
         {
             var getObjectRequest = new GetObjectRequest
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,
-                Key = GetRelativePath(logicalPath)
+                Key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath)
             };
 
             var response = await AwsS3Client.GetObjectAsync(getObjectRequest);

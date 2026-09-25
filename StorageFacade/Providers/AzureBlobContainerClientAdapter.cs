@@ -12,6 +12,8 @@ namespace Beztek.Facade.Storage.Providers
     using Azure.Storage.Blobs;
     using Azure.Storage.Blobs.Models;
 
+    /// <summary>Thin Azure SDK forwarder — exercised by live Azurite; excluded so Coverlet tracks provider logic.</summary>
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     internal sealed class AzureBlobContainerClientAdapter : IAzureBlobContainerAdapter
     {
         private readonly BlobContainerClient _containerClient;

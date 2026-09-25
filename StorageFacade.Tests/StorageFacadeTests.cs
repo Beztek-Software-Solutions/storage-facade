@@ -79,7 +79,7 @@ namespace Beztek.Facade.Storage.Tests
             byte[] payload = Encoding.UTF8.GetBytes("payload");
 
             using var stream = new MemoryStream(payload);
-            var ex = Assert.ThrowsAsync<Exception>(async () =>
+            var ex = Assert.ThrowsAsync<StorageFacadeException>(async () =>
                 await facade.WriteStorageAsync("s3://bucket/x.txt", stream, validateChecksum: true));
 
             Assert.That(ex!.Message, Does.Contain("does not match"));

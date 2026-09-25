@@ -183,7 +183,7 @@ namespace Beztek.Facade.Storage.Tests
                 .Returns(NTStatus.STATUS_SUCCESS);
 
             var provider = new SMBNetworkStorageProvider(_config, factory.Object);
-            Assert.Throws<Exception>(() => provider.GetStorageInfo(@"\\fileserver\Docs\missing.txt"));
+            Assert.Throws<FileNotFoundException>(() => provider.GetStorageInfo(@"\\fileserver\Docs\missing.txt"));
         }
 
         private static Mock<ISMBFileStore> CreateFileStoreMock(out Mock<ISmbClientFactory> factory)
@@ -224,14 +224,16 @@ namespace Beztek.Facade.Storage.Tests
 
         private static FileDirectoryInformation CreateDirectoryInformation(string name, bool isDirectory, long size)
         {
-            return new FileDirectoryInformation
+            var info = new FileDirectoryInformation
             {
                 FileName = name,
                 FileAttributes = isDirectory ? FileAttributes.Directory : FileAttributes.Normal,
-                AllocationSize = size,
                 CreationTime = DateTime.UtcNow,
-                LastWriteTime = DateTime.UtcNow
+                LastWriteTime = DateTime.UtcNow,
             };
+            info.EndOfFile = size;
+            info.AllocationSize = size;
+            return info;
         }
 
         private delegate void QueryDirectoryCallback(out List<QueryDirectoryFileInformation> list, object handle, string searchPattern, FileInformationClass informationClass);

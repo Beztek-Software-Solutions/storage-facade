@@ -30,6 +30,51 @@ namespace Beztek.Facade.Storage.Tests
         }
 
         [Test]
+        public void Dispose_IsIdempotent_AndDisposesClients()
+        {
+            var mockS3 = new Mock<IAmazonS3>();
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.As<IDisposable>();
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, mockTransfer.Object);
+            provider.Dispose();
+            provider.Dispose();
+
+            mockTransfer.As<IDisposable>().Verify(d => d.Dispose(), Times.Once);
+            mockS3.Verify(c => c.Dispose(), Times.Once);
+        }
+
+        [Test]
+        public void Dispose_WhenTransferUtilityIsNotIDisposable_StillDisposesS3Client()
+        {
+            var mockS3 = new Mock<IAmazonS3>();
+            // Plain ITransferUtility mock does not implement IDisposable.
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, Mock.Of<ITransferUtility>());
+            provider.Dispose();
+            mockS3.Verify(c => c.Dispose(), Times.Once);
+        }
+
+        [Test]
+        public async Task WriteStorageAsync_SeekableStream_LengthThrows_FallsBackToTransferUtility()
+        {
+            TransferUtilityUploadRequest captured = null;
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.Setup(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default))
+                .Returns((TransferUtilityUploadRequest req, CancellationToken _) =>
+                {
+                    captured = req;
+                    return Task.CompletedTask;
+                });
+
+            var provider = new AwsS3StorageProvider(_config, Mock.Of<IAmazonS3>(), mockTransfer.Object);
+            using var stream = new LengthThrowsSeekableStream(Encoding.UTF8.GetBytes("x"));
+            await provider.WriteStorageAsync("s3://orders/out/len.bin", stream);
+
+            Assert.That(captured, Is.Not.Null);
+            Assert.That(captured.Key, Is.EqualTo("out/len.bin"));
+        }
+
+        [Test]
         public void EnumerateStorageInfo_Recursive_ReturnsAllObjects()
         {
             var mockS3 = new Mock<IAmazonS3>();
@@ -264,6 +309,30 @@ namespace Beztek.Facade.Storage.Tests
             public override void Flush() => _inner.Flush();
             public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
             public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
+
+        /// <summary>Seekable stream whose <see cref="Stream.Length"/> throws (rare SDK / wrapper case).</summary>
+        private sealed class LengthThrowsSeekableStream : Stream
+        {
+            private readonly MemoryStream _inner;
+
+            public LengthThrowsSeekableStream(byte[] payload) => _inner = new MemoryStream(payload);
+
+            public override bool CanRead => true;
+            public override bool CanSeek => true;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position
+            {
+                get => _inner.Position;
+                set => _inner.Position = value;
+            }
+
+            public override void Flush() => _inner.Flush();
+            public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+            public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
             public override void SetLength(long value) => throw new NotSupportedException();
             public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         }

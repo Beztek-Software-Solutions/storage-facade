@@ -30,7 +30,29 @@ IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
 await storage.WriteStorageAsync(@"/tmp/demo/hello.txt", stream, createParentDirectories: true);
 ```
 
-### Amazon S3
+### Amazon S3 (default credentials — preferred on AWS)
+
+Uses the AWS SDK default credential chain (EC2/ECS instance role, IRSA,
+environment variables, shared credentials file). No long-lived access keys.
+
+```csharp
+string bucketName = "my-bucket";
+var config = new AwsS3StorageProviderConfig(regionName: "us-east-1", bucketName: bucketName);
+IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
+
+await storage.WriteStorageAsync($"s3://{bucketName}/folder/file.pdf", stream, createParentDirectories: true);
+```
+
+Optional custom endpoint (MinIO / LocalStack / S3Mock):
+
+```csharp
+var config = new AwsS3StorageProviderConfig(
+    regionName: "us-east-1",
+    bucketName: "my-bucket",
+    serviceUrl: "http://127.0.0.1:9090");
+```
+
+### Amazon S3 (explicit access keys)
 
 ```csharp
 var config = new AwsS3StorageProviderConfig(accessKeyId, secretAccessKey, region, bucketName);
@@ -38,6 +60,10 @@ IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
 
 await storage.WriteStorageAsync($"s3://{bucketName}/folder/file.pdf", stream, createParentDirectories: true);
 ```
+
+Temporary STS credentials (access key + secret + session token) are supported via
+an overload, but those credentials do **not** auto-refresh. Prefer the default
+credential chain for IAM roles.
 
 ### Azure Blob Storage (account key)
 
@@ -58,6 +84,25 @@ var config = new AzureBlobStorageProviderConfig(uri);
 IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
 ```
 
+### Azure Blob Storage (connection string / Azurite)
+
+```csharp
+// Azurite: make test-azure  (or --use-azure-container)
+var config = new AzureBlobStorageProviderConfig(
+    "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=…;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;",
+    containerName: "storage-live");
+IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
+```
+
+Custom service URI + account key (same stand-in without a connection string):
+
+```csharp
+var config = new AzureBlobStorageProviderConfig(
+    new Uri("http://127.0.0.1:10000/devstoreaccount1"),
+    accountKey,
+    containerName: "storage-live");
+```
+
 ### SMB network share
 
 ```csharp
@@ -67,10 +112,54 @@ var config = new SMBNetworkStorageProviderConfig(
     domain: "CORP",
     username: "svc-account",
     password: "secret",
-    physicalServer: "physical-host"); // optional DFS mapping
+    physicalServer: "physical-host", // optional DFS mapping
+    port: 445); // optional; use e.g. 1445 for a container published on a high host port
 IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
 
 await storage.WriteStorageAsync(@"\\fileserver\Documents\reports\q1.pdf", stream, createParentDirectories: true);
+```
+
+### Google Cloud Storage (Application Default Credentials)
+
+```csharp
+// ADC: GOOGLE_APPLICATION_CREDENTIALS, gcloud ADC, GCE/GKE metadata — no keys in code
+var config = new GoogleCloudStorageProviderConfig(bucketName: "my-bucket");
+IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
+
+// Emulator (fake-gcs-server): service URI only, unauthenticated
+var emulator = new GoogleCloudStorageProviderConfig(
+    bucketName: "storage-live",
+    serviceUri: "http://127.0.0.1:4443/storage/v1/");
+```
+
+Optional path to a service-account JSON *file* (same as `GOOGLE_APPLICATION_CREDENTIALS`):
+
+```csharp
+var config = new GoogleCloudStorageProviderConfig(
+    bucketName: "my-bucket",
+    serviceUri: null,
+    credentialsFilePath: Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS"));
+```
+
+### Alibaba Cloud OSS (environment credentials)
+
+```csharp
+// Prefer env: ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET
+// (optional ALIBABA_CLOUD_SECURITY_TOKEN), or legacy OSS_ACCESS_KEY_*
+var config = new AlibabaOssStorageProviderConfig(
+    endpoint: "oss-us-west-1.aliyuncs.com",
+    bucketName: "my-bucket");
+IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
+```
+
+Explicit keys only when injected at runtime from a secret store (not hard-coded):
+
+```csharp
+var config = new AlibabaOssStorageProviderConfig(
+    endpoint: "oss-us-west-1.aliyuncs.com",
+    accessKeyId: Environment.GetEnvironmentVariable("ALIBABA_CLOUD_ACCESS_KEY_ID"),
+    accessKeySecret: Environment.GetEnvironmentVariable("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
+    bucketName: "my-bucket");
 ```
 
 ## Combo storage (multi-store)
@@ -107,20 +196,21 @@ default local-file facade          (OS path, e.g. /tmp/x or C:\data\x)
 Matching is implemented as:
 
 ```csharp
-logicalPath.ToLower().StartsWith(entry.Key)
+logicalPath.StartsWith(entry.Key, StringComparison.OrdinalIgnoreCase)
 ```
 
-Registered store names from the provider configs are already normalized to lowercase (`s3://bucket`, `https://account.blob.core.windows.net/container`, `\\server\share`), so paths should use the same casing conventions.
+Registered store names from the provider configs are typically lowercased (`s3://bucket`, `gs://bucket`, `oss://bucket`, `https://…`, `\\server\share`); path matching itself is case-insensitive.
 
 **Important routing details:**
 
 | Topic | Behavior |
 |-------|----------|
-| Match rule | **Prefix** match on the full logical path string |
+| Match rule | **Prefix** match on the full logical path string (case-insensitive) |
 | Tie-breaking | **First registered** facade wins — **not** longest-prefix. If two prefixes could both match, registration order matters |
 | Default fallback | Any path that matches **no** registered prefix uses local files |
 | Path shape | Remote paths must include the store prefix (e.g. `s3://orders/invoices/a.pdf`, not `invoices/a.pdf`) |
 | Local paths | Standard OS paths (`/var/data/x`, `C:\temp\x`) typically match nothing registered and fall through to local files |
+| Errors | Missing objects → `FileNotFoundException` (or provider SDK exception); I/O / protocol failures → `StorageFacadeException` (`IOException`) |
 
 ### Default local-file facade
 
@@ -221,13 +311,24 @@ foreach (StorageInfo info in storage.EnumerateStorageInfo(root, isRecursive: tru
 | Provider | Configuration | Notes |
 |----------|---------------|-------|
 | Local files | `FileStorageProviderConfig` | Uses OS paths directly |
-| SMB | `SMBNetworkStorageProviderConfig` | Linux-friendly SMB client; optional DFS mapping |
-| Azure Blob | `AzureBlobStorageProviderConfig` | Account key or SAS URI; flat or hierarchical namespace |
-| Amazon S3 | `AwsS3StorageProviderConfig` | Standard S3 API |
+| SMB | `SMBNetworkStorageProviderConfig` | Linux-friendly SMB client; optional DFS mapping; optional TCP `port` (default 445) |
+| Google Cloud Storage | `GoogleCloudStorageProviderConfig` | ADC by default; optional credentials *file path*; emulator `serviceUri` |
+| Alibaba OSS | `AlibabaOssStorageProviderConfig` | Env credentials by default (`ALIBABA_CLOUD_*` / `OSS_*`); optional runtime keys |
+| Azure Blob | `AzureBlobStorageProviderConfig` | Account key, SAS URI, connection string, or custom service URI (e.g. Azurite); flat or hierarchical namespace |
+| Amazon S3 | `AwsS3StorageProviderConfig` | Default AWS credential chain, static keys, optional session token / `serviceUrl` |
 | Combo | `ComboStorageFacade` | Prefix-based routing across facades |
 
 ## Testing
 
-Unit tests use **Moq** for S3, Azure, and SMB provider dependencies (mock `IAmazonS3`, `IAzureBlobContainerAdapter`, `ISmbClientFactory` / `ISMBFileStore`). Local file tests use the real filesystem. No cloud credentials or network shares are required in CI.
+Unit tests use **Moq** for S3, Azure, and SMB provider dependencies (mock `IAmazonS3`, `IAzureBlobContainerAdapter`, `ISmbClientFactory` / `ISMBFileStore`). Local file tests use the real filesystem. No cloud credentials or network shares are required for the default suite.
+
+Optional **live** tests (`Category=Live`) exercise real backends. Prefer the repo **Makefile**:
+
+```bash
+make test                                                    # File only
+make -- test --use-s3-container --use-azure-container --use-smb-container
+```
+
+See the root [README](../README.md#live-container-tests).
 
 XML documentation is included in the NuGet package (`GenerateDocumentationFile`).

@@ -13,6 +13,10 @@ namespace Beztek.Facade.Storage
         AzureBlobStore,
         /// <summary>Amazon S3 bucket.</summary>
         AmazonS3Store,
+        /// <summary>Google Cloud Storage bucket.</summary>
+        GoogleCloudStorageStore,
+        /// <summary>Alibaba Cloud Object Storage Service (OSS) bucket.</summary>
+        AlibabaOssStore,
         /// <summary>Prefix-routed combination of multiple stores.</summary>
         ComboStore
     }
