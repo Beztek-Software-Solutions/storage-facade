@@ -65,6 +65,14 @@ Temporary STS credentials (access key + secret + session token) are supported vi
 an overload, but those credentials do **not** auto-refresh. Prefer the default
 credential chain for IAM roles.
 
+**Multipart cleanup:** Unknown-length / non-seekable streams (including writes through
+`StorageFacade`, which wraps the input in a `CryptoStream`) use S3 multipart upload via
+`TransferUtility`. If that write fails mid-stream, the provider best-effort aborts any
+incomplete multipart uploads for that key. `DeleteObject` alone does **not** remove
+incomplete multiparts (they are not objects until completed); `DeleteStorageAsync`
+therefore also lists and aborts incomplete multiparts for the key, so a try-delete after
+an aborted or orphaned upload frees part storage.
+
 ### Azure Blob Storage (account key)
 
 ```csharp

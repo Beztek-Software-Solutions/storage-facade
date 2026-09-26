@@ -289,6 +289,112 @@ namespace Beztek.Facade.Storage.Tests
             Assert.That(captured.AutoCloseStream, Is.False);
         }
 
+        [Test]
+        public void WriteStorageAsync_TransferUtilityFailure_AbortsIncompleteMultipartUploads()
+        {
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.Setup(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default))
+                .ThrowsAsync(new IOException("stream aborted"));
+
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.ListMultipartUploadsAsync(It.IsAny<ListMultipartUploadsRequest>(), default))
+                .ReturnsAsync(new ListMultipartUploadsResponse
+                {
+                    MultipartUploads = new List<MultipartUpload>
+                    {
+                        new() { Key = "uploads/photo.jpg", UploadId = "upload-exact" },
+                        new() { Key = "uploads/photo.jpg.bak", UploadId = "upload-prefix-only" }
+                    },
+                    IsTruncated = false
+                });
+            mockS3.Setup(c => c.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), default))
+                .ReturnsAsync(new AbortMultipartUploadResponse());
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, mockTransfer.Object);
+            using var inner = new MemoryStream(Encoding.UTF8.GetBytes("partial"));
+            using var nonSeekable = new NonSeekableStream(inner);
+
+            var thrown = Assert.ThrowsAsync<IOException>(async () =>
+                await provider.WriteStorageAsync("s3://orders/uploads/photo.jpg", nonSeekable));
+            Assert.That(thrown, Is.Not.Null);
+
+            mockS3.Verify(c => c.AbortMultipartUploadAsync(
+                It.Is<AbortMultipartUploadRequest>(r =>
+                    r.BucketName == Bucket &&
+                    r.Key == "uploads/photo.jpg" &&
+                    r.UploadId == "upload-exact"),
+                default), Times.Once);
+            mockS3.Verify(c => c.AbortMultipartUploadAsync(
+                It.Is<AbortMultipartUploadRequest>(r => r.UploadId == "upload-prefix-only"),
+                default), Times.Never);
+        }
+
+        [Test]
+        public void WriteStorageAsync_TransferUtilityFailure_RethrowsEvenIfAbortFails()
+        {
+            var mockTransfer = new Mock<ITransferUtility>();
+            mockTransfer.Setup(t => t.UploadAsync(It.IsAny<TransferUtilityUploadRequest>(), default))
+                .ThrowsAsync(new IOException("stream aborted"));
+
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.ListMultipartUploadsAsync(It.IsAny<ListMultipartUploadsRequest>(), default))
+                .ThrowsAsync(new AmazonS3Exception("ListMultipartUploads denied"));
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object, mockTransfer.Object);
+            using var inner = new MemoryStream(Encoding.UTF8.GetBytes("partial"));
+            using var nonSeekable = new NonSeekableStream(inner);
+
+            Assert.ThrowsAsync<IOException>(async () =>
+                await provider.WriteStorageAsync("s3://orders/uploads/photo.jpg", nonSeekable));
+        }
+
+        [Test]
+        public async Task DeleteStorageAsync_DeletesObjectAndAbortsIncompleteMultipartUploads()
+        {
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
+                .ReturnsAsync(new DeleteObjectResponse());
+            mockS3.Setup(c => c.ListMultipartUploadsAsync(It.IsAny<ListMultipartUploadsRequest>(), default))
+                .ReturnsAsync(new ListMultipartUploadsResponse
+                {
+                    MultipartUploads = new List<MultipartUpload>
+                    {
+                        new() { Key = "uploads/photo.jpg", UploadId = "orphan-1" },
+                        new() { Key = "uploads/photo.jpg", UploadId = "orphan-2" }
+                    },
+                    IsTruncated = false
+                });
+            mockS3.Setup(c => c.AbortMultipartUploadAsync(It.IsAny<AbortMultipartUploadRequest>(), default))
+                .ReturnsAsync(new AbortMultipartUploadResponse());
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            await provider.DeleteStorageAsync("s3://orders/uploads/photo.jpg");
+
+            mockS3.Verify(c => c.DeleteObjectAsync(
+                It.Is<DeleteObjectRequest>(r => r.BucketName == Bucket && r.Key == "uploads/photo.jpg"),
+                default), Times.Once);
+            mockS3.Verify(c => c.AbortMultipartUploadAsync(
+                It.Is<AbortMultipartUploadRequest>(r => r.UploadId == "orphan-1"),
+                default), Times.Once);
+            mockS3.Verify(c => c.AbortMultipartUploadAsync(
+                It.Is<AbortMultipartUploadRequest>(r => r.UploadId == "orphan-2"),
+                default), Times.Once);
+        }
+
+        [Test]
+        public void DeleteStorageAsync_SucceedsWhenAbortListingFails()
+        {
+            var mockS3 = new Mock<IAmazonS3>();
+            mockS3.Setup(c => c.DeleteObjectAsync(It.IsAny<DeleteObjectRequest>(), default))
+                .ReturnsAsync(new DeleteObjectResponse());
+            mockS3.Setup(c => c.ListMultipartUploadsAsync(It.IsAny<ListMultipartUploadsRequest>(), default))
+                .ThrowsAsync(new AmazonS3Exception("ListMultipartUploads denied"));
+
+            var provider = new AwsS3StorageProvider(_config, mockS3.Object);
+            Assert.DoesNotThrowAsync(async () =>
+                await provider.DeleteStorageAsync("s3://orders/uploads/photo.jpg"));
+        }
+
         /// <summary>Forward-only stream with no Length/Position — like multipart request bodies.</summary>
         private sealed class NonSeekableStream : Stream
         {

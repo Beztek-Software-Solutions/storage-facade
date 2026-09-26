@@ -4,13 +4,13 @@
     <TargetFramework>net9.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <id>Beztek.Facade.Storage</id>
-    <version>1.4.0</version>
+    <version>1.4.1</version>
     <authors>Peter Thomas</authors>
     <owners>Beztek Software Solutions</owners>
     <projectUrl>https://github.com/Beztek-Software-Solutions/storage-facade</projectUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>Storage Facade</description>
-    <releaseNotes>Add GCS and Alibaba OSS providers; live container suite; Combo case-insensitive routing; StorageFacadeException; shared cloud path helper; IDisposable on facades/providers.</releaseNotes>
+    <releaseNotes>S3: abort incomplete multipart uploads on write failure and on DeleteStorageAsync.</releaseNotes>
     <copyright>Copyright 2023, Beztek Software Solutions</copyright>
     <tags>Beztek.Facade;Beztek.Facade.Storage;storage-facade;StorageFacade</tags>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>

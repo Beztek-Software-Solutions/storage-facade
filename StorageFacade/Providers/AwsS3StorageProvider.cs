@@ -5,6 +5,7 @@ namespace Beztek.Facade.Storage.Providers
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Security.Cryptography;
     using System.Threading.Tasks;
     using Amazon.S3;
@@ -118,32 +119,42 @@ namespace Beztek.Facade.Storage.Providers
         {
             string key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
 
-            // Known length: simple PutObject with ContentLength (AWSSDK.S3 4.x requires it).
-            // Unknown length: TransferUtility multipart uploads in part-sized chunks without
-            // buffering the entire object (PutObject chunked encoding still needs ContentLength
-            // when the stream does not report Length).
-            if (TryGetRemainingLength(inputStream, out long contentLength))
+            try
             {
-                var putRequest = new PutObjectRequest
+                // Known length: simple PutObject with ContentLength (AWSSDK.S3 4.x requires it).
+                // Unknown length: TransferUtility multipart uploads in part-sized chunks without
+                // buffering the entire object (PutObject chunked encoding still needs ContentLength
+                // when the stream does not report Length).
+                if (TryGetRemainingLength(inputStream, out long contentLength))
+                {
+                    var putRequest = new PutObjectRequest
+                    {
+                        BucketName = AwsS3StorageProviderConfig.BucketName,
+                        Key = key,
+                        InputStream = inputStream,
+                        AutoCloseStream = false
+                    };
+                    putRequest.Headers.ContentLength = contentLength;
+                    await AwsS3Client.PutObjectAsync(putRequest).ConfigureAwait(false);
+                    return;
+                }
+
+                var uploadRequest = new TransferUtilityUploadRequest
                 {
                     BucketName = AwsS3StorageProviderConfig.BucketName,
                     Key = key,
                     InputStream = inputStream,
                     AutoCloseStream = false
                 };
-                putRequest.Headers.ContentLength = contentLength;
-                await AwsS3Client.PutObjectAsync(putRequest).ConfigureAwait(false);
-                return;
+                await TransferUtility.UploadAsync(uploadRequest).ConfigureAwait(false);
             }
-
-            var uploadRequest = new TransferUtilityUploadRequest
+            catch
             {
-                BucketName = AwsS3StorageProviderConfig.BucketName,
-                Key = key,
-                InputStream = inputStream,
-                AutoCloseStream = false
-            };
-            await TransferUtility.UploadAsync(uploadRequest).ConfigureAwait(false);
+                // TransferUtility attempts to abort on interrupt, but can leave parts behind
+                // (network drop, process kill mid-abort, etc.). Best-effort cleanup by key.
+                await TryAbortIncompleteMultipartUploadsAsync(key).ConfigureAwait(false);
+                throw;
+            }
         }
 
         private static bool TryGetRemainingLength(Stream stream, out long contentLength)
@@ -165,13 +176,64 @@ namespace Beztek.Facade.Storage.Providers
 
         public async Task DeleteStorageAsync(string logicalPath)
         {
+            string key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath);
             var deleteRequest = new DeleteObjectRequest
             {
                 BucketName = AwsS3StorageProviderConfig.BucketName,
-                Key = CloudLogicalPath.GetRelativePath(GetName(), logicalPath)
+                Key = key
             };
 
-            await AwsS3Client.DeleteObjectAsync(deleteRequest);
+            // DeleteObject only removes a completed object. Incomplete multipart uploads are not
+            // objects; abort them by key so a try-delete after a failed/orphaned stream upload
+            // frees part storage.
+            await AwsS3Client.DeleteObjectAsync(deleteRequest).ConfigureAwait(false);
+            await TryAbortIncompleteMultipartUploadsAsync(key).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Lists incomplete multipart uploads whose key exactly matches <paramref name="key"/>
+        /// and aborts each. Failures are swallowed (best-effort cleanup).
+        /// </summary>
+        private async Task TryAbortIncompleteMultipartUploadsAsync(string key)
+        {
+            try
+            {
+                string keyMarker = null;
+                string uploadIdMarker = null;
+                ListMultipartUploadsResponse response;
+                do
+                {
+                    var listRequest = new ListMultipartUploadsRequest
+                    {
+                        BucketName = AwsS3StorageProviderConfig.BucketName,
+                        Prefix = key,
+                        KeyMarker = keyMarker,
+                        UploadIdMarker = uploadIdMarker
+                    };
+
+                    response = await AwsS3Client.ListMultipartUploadsAsync(listRequest).ConfigureAwait(false);
+                    foreach (MultipartUpload upload in response.MultipartUploads ?? Enumerable.Empty<MultipartUpload>())
+                    {
+                        // Prefix is not an exact-key filter.
+                        if (!string.Equals(upload.Key, key, StringComparison.Ordinal))
+                            continue;
+
+                        await AwsS3Client.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
+                        {
+                            BucketName = AwsS3StorageProviderConfig.BucketName,
+                            Key = key,
+                            UploadId = upload.UploadId
+                        }).ConfigureAwait(false);
+                    }
+
+                    keyMarker = response.NextKeyMarker;
+                    uploadIdMarker = response.NextUploadIdMarker;
+                } while (response.IsTruncated == true);
+            }
+            catch
+            {
+                // Best-effort: do not mask the original write failure or fail a successful DeleteObject.
+            }
         }
 
         public async Task<string> ComputeMD5Checksum(string logicalPath)
