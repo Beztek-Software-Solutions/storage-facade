@@ -13,6 +13,9 @@ namespace Beztek.Facade.Storage.Tests.Live
     /// Remote providers require Make flags
     /// (<c>--use-s3-container</c>, <c>--use-azure-container</c>, <c>--use-smb-container</c>,
     /// <c>--use-gcs-container</c>, <c>--use-oss-live</c>).
+    /// Includes mid-stream abort + try-delete cleanup and unknown-length write + delete for every
+    /// selected provider. S3 incomplete multipart specifics live in
+    /// <see cref="LiveAwsS3MultipartCleanupTests"/>.
     /// </summary>
     [TestFixtureSource(typeof(LiveProviderFixtureSource), nameof(LiveProviderFixtureSource.Providers))]
     [Category("Live")]
@@ -230,6 +233,67 @@ namespace Beztek.Facade.Storage.Tests.Live
                 try { await _host.Storage.DeleteStorageAsync(directPath).ConfigureAwait(false); } catch { /* best-effort */ }
                 try { await _host.Storage.DeleteStorageAsync(nestedPath).ConfigureAwait(false); } catch { /* best-effort */ }
             }
+        }
+
+        [Test]
+        public async Task WriteStorageAsync_StreamAbort_ThenDelete_LeavesObjectAbsent()
+        {
+            // Unknown-length / mid-stream abort: write must fail; try-delete must leave nothing readable.
+            // S3 also aborts incomplete multiparts on write failure and on delete (see LiveAwsS3MultipartCleanupTests).
+            string path = _host.ObjectPath("live-abort/" + Guid.NewGuid().ToString("N") + ".bin");
+
+            // Enough bytes for S3 TransferUtility / Azure block staging to start before the throw.
+            using var failing = new LiveTestHelpers.FailAfterBytesStream(6 * 1024 * 1024);
+
+            Exception thrown = null;
+            try
+            {
+                await _host.Storage.WriteStorageAsync(path, failing, createParentDirectories: true)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                thrown = ex;
+            }
+
+            Assert.That(thrown, Is.Not.Null, $"write must fail on stream abort for {_providerType}");
+
+            try
+            {
+                await _host.Storage.DeleteStorageAsync(path).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Missing / already cleaned is fine.
+            }
+
+            await AssertObjectAbsentAsync(path).ConfigureAwait(false);
+        }
+
+        [Test]
+        public async Task WriteStorageAsync_UnknownLengthCompletes_ThenDelete_LeavesObjectAbsent()
+        {
+            // Quiet early EOF on a non-seekable stream completes as a (possibly truncated) object;
+            // delete must remove it for every provider.
+            string path = _host.ObjectPath("live-eof/" + Guid.NewGuid().ToString("N") + ".bin");
+            byte[] payload = Encoding.UTF8.GetBytes("early-eof-" + Guid.NewGuid().ToString("N"));
+
+            await using (var inner = new MemoryStream(payload))
+            await using (var nonSeekable = new LiveTestHelpers.NonSeekableStream(inner))
+            {
+                string checksum = await _host.Storage.WriteStorageAsync(
+                    path,
+                    nonSeekable,
+                    createParentDirectories: true).ConfigureAwait(false);
+                Assert.That(checksum, Is.Not.Null.And.Not.Empty);
+            }
+
+            StorageInfo info = _host.Storage.GetStorageInfo(path);
+            Assert.That(info.IsFile, Is.True);
+            Assert.That(info.SizeBytes, Is.EqualTo(payload.Length));
+
+            await _host.Storage.DeleteStorageAsync(path).ConfigureAwait(false);
+            await AssertObjectAbsentAsync(path).ConfigureAwait(false);
         }
 
         private async Task AssertObjectAbsentAsync(string path)

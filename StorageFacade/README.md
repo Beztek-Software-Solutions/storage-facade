@@ -337,6 +337,10 @@ make test                                                    # File only
 make -- test --use-s3-container --use-azure-container --use-smb-container
 ```
 
+`LiveProviderTests` covers every selected provider, including mid-stream abort + try-delete
+cleanup and unknown-length write + delete. S3 incomplete multipart abort is also covered by
+`LiveAwsS3MultipartCleanupTests` when `s3` is selected.
+
 See the root [README](../README.md#live-container-tests).
 
 XML documentation is included in the NuGet package (`GenerateDocumentationFile`).
