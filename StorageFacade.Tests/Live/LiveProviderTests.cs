@@ -13,9 +13,10 @@ namespace Beztek.Facade.Storage.Tests.Live
     /// Remote providers require Make flags
     /// (<c>--use-s3-container</c>, <c>--use-azure-container</c>, <c>--use-smb-container</c>,
     /// <c>--use-gcs-container</c>, <c>--use-oss-live</c>).
-    /// Includes mid-stream abort + try-delete cleanup and unknown-length write + delete for every
-    /// selected provider. S3 incomplete multipart specifics live in
-    /// <see cref="LiveAwsS3MultipartCleanupTests"/>.
+    /// Each selected provider is exercised through <see cref="ComboStorageFacade"/>
+    /// (<see cref="LiveProviderHost.Storage"/>). Includes mid-stream abort + try-delete cleanup
+    /// and unknown-length write + delete for every selected provider. S3 incomplete multipart
+    /// specifics live in <see cref="LiveAwsS3MultipartCleanupTests"/>.
     /// </summary>
     [TestFixtureSource(typeof(LiveProviderFixtureSource), nameof(LiveProviderFixtureSource.Providers))]
     [Category("Live")]
@@ -147,8 +148,12 @@ namespace Beztek.Facade.Storage.Tests.Live
         [Test]
         public void GetName_MatchesProviderKind()
         {
-            string name = _host.Storage.GetName();
-            Assert.That(_host.Storage.GetType(), Is.EqualTo(_providerType));
+            // Identity comes from the direct provider; I/O goes through ComboStorageFacade.
+            Assert.That(_host.Storage.GetType(), Is.EqualTo(StorageFacadeType.ComboStore));
+            Assert.That(_host.Storage.GetName(), Is.EqualTo("ComboProvider"));
+
+            string name = _host.DirectStorage.GetName();
+            Assert.That(_host.DirectStorage.GetType(), Is.EqualTo(_providerType));
 
             switch (_providerType)
             {

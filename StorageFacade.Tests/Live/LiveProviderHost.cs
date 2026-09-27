@@ -3,6 +3,7 @@
 namespace Beztek.Facade.Storage.Tests.Live
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
     using System.Net;
     using System.Net.Http;
@@ -16,44 +17,77 @@ namespace Beztek.Facade.Storage.Tests.Live
     using Beztek.Facade.Storage.Providers;
 
     /// <summary>
-    /// Builds an <see cref="IStorageFacade"/> for a live provider using env written by Make.
+    /// Builds a live <see cref="IStorageFacade"/> for a provider using env written by Make,
+    /// always exposed via <see cref="ComboStorageFacade"/> (<see cref="Storage"/>).
     /// Does not start containers — hard-fails when a remote provider is selected but unreachable.
     /// </summary>
     public sealed class LiveProviderHost : IAsyncDisposable
     {
         private readonly string _tempRoot;
+        private bool _ownsStorage = true;
 
         private LiveProviderHost(
             StorageFacadeType providerType,
-            IStorageFacade storage,
+            IStorageFacade directStorage,
             string tempRoot,
-            string pathPrefix)
+            string pathPrefix,
+            bool wrapInCombo)
         {
             ProviderType = providerType;
-            Storage = storage;
+            DirectStorage = directStorage;
+            // Default: exercise the provider through ComboStorageFacade so routing and the
+            // built-in File fallback stay covered alongside the direct backend.
+            if (!wrapInCombo)
+                Storage = directStorage;
+            else if (providerType == StorageFacadeType.LocalFileStore)
+                Storage = new ComboStorageFacade(new List<IStorageFacade>());
+            else
+                Storage = new ComboStorageFacade(new List<IStorageFacade> { directStorage });
             _tempRoot = tempRoot;
             PathPrefix = pathPrefix;
         }
 
         public StorageFacadeType ProviderType { get; }
 
+        /// <summary>
+        /// Direct (non-combo) facade for the selected provider — used for identity assertions.
+        /// </summary>
+        public IStorageFacade DirectStorage { get; }
+
+        /// <summary>
+        /// <see cref="ComboStorageFacade"/> wrapping <see cref="DirectStorage"/> (or File-only
+        /// combo for <see cref="StorageFacadeType.LocalFileStore"/>). Live I/O goes through this.
+        /// </summary>
         public IStorageFacade Storage { get; }
 
         /// <summary>
-        /// Prefix for object paths (absolute dir for File; store name for S3/Azure/SMB).
+        /// Prefix for object paths (absolute dir for File; store name for cloud/SMB providers).
         /// </summary>
         public string PathPrefix { get; }
 
-        public static async Task<LiveProviderHost> StartAsync(StorageFacadeType providerType)
+        /// <summary>
+        /// Caller takes ownership of <see cref="DirectStorage"/> (and <see cref="Storage"/> when
+        /// they are the same instance). Host dispose will only clean temp roots.
+        /// </summary>
+        public void RelinquishStorageOwnership() => _ownsStorage = false;
+
+        /// <param name="wrapInCombo">
+        /// When true (default), <see cref="Storage"/> is a <see cref="ComboStorageFacade"/> over
+        /// the provider (File-only combo for local). Set false when the caller will register
+        /// <see cref="DirectStorage"/> into its own combo.
+        /// </param>
+        public static async Task<LiveProviderHost> StartAsync(
+            StorageFacadeType providerType,
+            bool wrapInCombo = true)
         {
             return providerType switch
             {
-                StorageFacadeType.LocalFileStore => StartFile(),
-                StorageFacadeType.AmazonS3Store => await StartS3Async().ConfigureAwait(false),
-                StorageFacadeType.AzureBlobStore => await StartAzureAsync().ConfigureAwait(false),
-                StorageFacadeType.SMBNetworkStore => StartSmb(),
-                StorageFacadeType.GoogleCloudStorageStore => await StartGcsAsync().ConfigureAwait(false),
-                StorageFacadeType.AlibabaOssStore => StartOss(),
+                StorageFacadeType.LocalFileStore => StartFile(wrapInCombo),
+                StorageFacadeType.AmazonS3Store => await StartS3Async(wrapInCombo).ConfigureAwait(false),
+                StorageFacadeType.AzureBlobStore => await StartAzureAsync(wrapInCombo).ConfigureAwait(false),
+                StorageFacadeType.SMBNetworkStore => StartSmb(wrapInCombo),
+                StorageFacadeType.GoogleCloudStorageStore => await StartGcsAsync(wrapInCombo).ConfigureAwait(false),
+                StorageFacadeType.AlibabaOssStore => StartOss(wrapInCombo),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(providerType),
                     providerType,
@@ -74,6 +108,17 @@ namespace Beztek.Facade.Storage.Tests.Live
 
         public ValueTask DisposeAsync()
         {
+            if (_ownsStorage)
+            {
+                (Storage as IDisposable)?.Dispose();
+                // File combo uses a separate default facade; DirectStorage is not a combo child.
+                if (ProviderType == StorageFacadeType.LocalFileStore
+                    && !ReferenceEquals(Storage, DirectStorage))
+                {
+                    (DirectStorage as IDisposable)?.Dispose();
+                }
+            }
+
             if (!string.IsNullOrEmpty(_tempRoot) && Directory.Exists(_tempRoot))
             {
                 try { Directory.Delete(_tempRoot, recursive: true); }
@@ -83,15 +128,15 @@ namespace Beztek.Facade.Storage.Tests.Live
             return ValueTask.CompletedTask;
         }
 
-        private static LiveProviderHost StartFile()
+        private static LiveProviderHost StartFile(bool wrapInCombo)
         {
             string root = Path.Combine(Path.GetTempPath(), "storage-facade-live-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(new FileStorageProviderConfig());
-            return new LiveProviderHost(StorageFacadeType.LocalFileStore, storage, root, root);
+            return new LiveProviderHost(StorageFacadeType.LocalFileStore, storage, root, root, wrapInCombo);
         }
 
-        private static async Task<LiveProviderHost> StartS3Async()
+        private static async Task<LiveProviderHost> StartS3Async(bool wrapInCombo)
         {
             string bucket = FirstNonEmpty(
                 Environment.GetEnvironmentVariable("S3__BucketName"),
@@ -129,7 +174,7 @@ namespace Beztek.Facade.Storage.Tests.Live
                 sessionToken: null,
                 serviceUrl: serviceUrl);
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
-            return new LiveProviderHost(StorageFacadeType.AmazonS3Store, storage, tempRoot: null, pathPrefix: config.Name);
+            return new LiveProviderHost(StorageFacadeType.AmazonS3Store, storage, tempRoot: null, pathPrefix: config.Name, wrapInCombo);
         }
 
         private static async Task EnsureS3BucketExistsAsync(
@@ -159,7 +204,7 @@ namespace Beztek.Facade.Storage.Tests.Live
             }
         }
 
-        private static async Task<LiveProviderHost> StartAzureAsync()
+        private static async Task<LiveProviderHost> StartAzureAsync(bool wrapInCombo)
         {
             string containerName = FirstNonEmpty(
                 Environment.GetEnvironmentVariable("AZURE__ContainerName"),
@@ -210,10 +255,10 @@ namespace Beztek.Facade.Storage.Tests.Live
             await container.CreateIfNotExistsAsync().ConfigureAwait(false);
 
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
-            return new LiveProviderHost(StorageFacadeType.AzureBlobStore, storage, tempRoot: null, pathPrefix: config.Name);
+            return new LiveProviderHost(StorageFacadeType.AzureBlobStore, storage, tempRoot: null, pathPrefix: config.Name, wrapInCombo);
         }
 
-        private static LiveProviderHost StartSmb()
+        private static LiveProviderHost StartSmb(bool wrapInCombo)
         {
             string host = FirstNonEmpty(
                 Environment.GetEnvironmentVariable("SMB__Host"),
@@ -256,10 +301,10 @@ namespace Beztek.Facade.Storage.Tests.Live
                 physicalServer: host,
                 port: port);
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
-            return new LiveProviderHost(StorageFacadeType.SMBNetworkStore, storage, tempRoot: null, pathPrefix: config.Name);
+            return new LiveProviderHost(StorageFacadeType.SMBNetworkStore, storage, tempRoot: null, pathPrefix: config.Name, wrapInCombo);
         }
 
-        private static async Task<LiveProviderHost> StartGcsAsync()
+        private static async Task<LiveProviderHost> StartGcsAsync(bool wrapInCombo)
         {
             string bucket = FirstNonEmpty(
                 Environment.GetEnvironmentVariable("GCS__BucketName"),
@@ -290,10 +335,10 @@ namespace Beztek.Facade.Storage.Tests.Live
             }
 
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
-            return new LiveProviderHost(StorageFacadeType.GoogleCloudStorageStore, storage, tempRoot: null, pathPrefix: config.Name);
+            return new LiveProviderHost(StorageFacadeType.GoogleCloudStorageStore, storage, tempRoot: null, pathPrefix: config.Name, wrapInCombo);
         }
 
-        private static LiveProviderHost StartOss()
+        private static LiveProviderHost StartOss(bool wrapInCombo)
         {
             string endpoint = FirstNonEmpty(
                 Environment.GetEnvironmentVariable("OSS__Endpoint"),
@@ -330,7 +375,7 @@ namespace Beztek.Facade.Storage.Tests.Live
 
             var config = new AlibabaOssStorageProviderConfig(endpoint, bucket);
             IStorageFacade storage = StorageFacadeFactory.GetStorageFacade(config);
-            return new LiveProviderHost(StorageFacadeType.AlibabaOssStore, storage, tempRoot: null, pathPrefix: config.Name);
+            return new LiveProviderHost(StorageFacadeType.AlibabaOssStore, storage, tempRoot: null, pathPrefix: config.Name, wrapInCombo);
         }
 
         private static void EnsureHttpReachable(string endpoint, string label, string makeHint)

@@ -27,29 +27,34 @@ namespace Beztek.Facade.Storage.Tests
         }
 
         [Test]
-        public async Task RoutesWriteToMatchingMockProvider_ByPathPrefix()
+        public async Task RoutesWriteToMatchingMockProvider_ByPathPrefix_AllProviders()
         {
             IStorageFacade s3 = MockStorageProviderBuilder.CreateS3Facade("orders");
             IStorageFacade azure = MockStorageProviderBuilder.CreateAzureFacade("acct", "archive");
+            IStorageFacade smb = MockStorageProviderBuilder.CreateSmbFacade("fileserver", "documents");
+            IStorageFacade gcs = MockStorageProviderBuilder.CreateGcsFacade("media");
+            IStorageFacade oss = MockStorageProviderBuilder.CreateOssFacade("backups");
 
-            var combo = new ComboStorageFacade(new List<IStorageFacade> { s3, azure });
+            using var combo = new ComboStorageFacade(new List<IStorageFacade> { s3, azure, smb, gcs, oss });
 
-            string s3Path = "s3://orders/invoices/a.pdf";
-            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("s3-data")))
-                await combo.WriteStorageAsync(s3Path, stream, createParentDirectories: true);
+            var cases = new (string Path, string Payload)[]
+            {
+                ("s3://orders/invoices/a.pdf", "s3-data"),
+                ("https://acct.blob.core.windows.net/archive/backup/b.pdf", "azure-data"),
+                (@"\\fileserver\documents\reports\q1.pdf", "smb-data"),
+                ("gs://media/clips/c.mp4", "gcs-data"),
+                ("oss://backups/2024/d.bin", "oss-data"),
+            };
 
-            string azurePath = "https://acct.blob.core.windows.net/archive/backup/b.pdf";
-            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes("azure-data")))
-                await combo.WriteStorageAsync(azurePath, stream, createParentDirectories: true);
+            foreach ((string path, string payload) in cases)
+            {
+                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(payload)))
+                    await combo.WriteStorageAsync(path, stream, createParentDirectories: true);
 
-            StorageInfo s3Info = combo.GetStorageInfo(s3Path);
-            StorageInfo azureInfo = combo.GetStorageInfo(azurePath);
-
-            using (var reader = new StreamReader(await combo.ReadStorageAsync(s3Info)))
-                Assert.That(reader.ReadToEnd(), Is.EqualTo("s3-data"));
-
-            using (var reader = new StreamReader(await combo.ReadStorageAsync(azureInfo)))
-                Assert.That(reader.ReadToEnd(), Is.EqualTo("azure-data"));
+                StorageInfo info = combo.GetStorageInfo(path);
+                using var reader = new StreamReader(await combo.ReadStorageAsync(info));
+                Assert.That(reader.ReadToEnd(), Is.EqualTo(payload), path);
+            }
         }
 
         [Test]

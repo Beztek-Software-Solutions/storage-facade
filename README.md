@@ -1,6 +1,6 @@
 # Storage Facade
 
-Unified .NET storage facade (`Beztek.Facade.Storage`) over local files, SMB network shares, Azure Blob Storage, and Amazon S3.
+Unified .NET storage facade (`Beztek.Facade.Storage`) over local files, SMB network shares, Azure Blob Storage, Amazon S3, Google Cloud Storage, and Alibaba OSS — including a prefix-routed `ComboStorageFacade` across all of them.
 
 Source: https://github.com/Beztek-Software-Solutions/storage-facade
 
@@ -57,7 +57,7 @@ make print-live-env
 
 If a remote provider is listed but unreachable, that fixture is marked **inconclusive** with a Make hint.
 
-When any remote backend is selected, the live suite also runs **`LiveComboProviderTests`**: a `ComboStorageFacade` wrapping that remote store plus the combo’s built-in File fallback (remote-prefix path and a local absolute path).
+Every selected provider’s live I/O runs through **`ComboStorageFacade`** (`LiveProviderHost.Storage`). **`LiveComboProviderTests`** adds per-provider checks for that provider’s path prefix (when remote) plus the combo’s built-in File fallback. When two or more remotes are selected, **`LiveComboAllProvidersTests`** registers all of them in one combo and round-trips each.
 
 With coverage (Coverlet; target ≥ 85% line coverage with live containers):
 

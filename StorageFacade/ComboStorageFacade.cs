@@ -15,7 +15,8 @@ namespace Beztek.Facade.Storage
     /// <para>
     /// Each child facade registered in the constructor is indexed by its <see cref="IStorageFacade.GetName"/>
     /// value, which must match the prefix of logical paths for that store (e.g. <c>s3://bucket</c>,
-    /// <c>https://account.blob.core.windows.net/container</c>, <c>\\server\share</c>).
+    /// <c>https://account.blob.core.windows.net/container</c>, <c>\\server\share</c>,
+    /// <c>gs://bucket</c>, <c>oss://bucket</c>).
     /// </para>
     /// <para>
     /// Routing uses the first registered facade where

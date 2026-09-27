@@ -6,8 +6,9 @@ namespace Beztek.Facade.Storage.Tests.Live
     using NUnit.Framework;
 
     /// <summary>
-    /// Feeds <see cref="LiveComboProviderTests"/> one fixture per selected <em>remote</em> provider
-    /// (File is excluded — combo already embeds a local-file fallback).
+    /// Feeds <see cref="LiveComboProviderTests"/> one fixture per selected provider
+    /// (File, S3, Azure, SMB, GCS, OSS). File exercises the combo’s built-in local fallback;
+    /// remotes exercise prefix routing to that backend plus the same File fallback.
     /// </summary>
     public static class LiveComboFixtureSource
     {
@@ -15,9 +16,6 @@ namespace Beztek.Facade.Storage.Tests.Live
         {
             foreach (StorageFacadeType provider in LiveProviderSelection.Resolve())
             {
-                if (provider == StorageFacadeType.LocalFileStore)
-                    continue;
-
                 yield return new TestFixtureData(provider)
                     .SetArgDisplayNames("Combo+" + provider);
             }

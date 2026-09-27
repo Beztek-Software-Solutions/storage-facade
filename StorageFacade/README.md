@@ -172,7 +172,7 @@ var config = new AlibabaOssStorageProviderConfig(
 
 ## Combo storage (multi-store)
 
-`ComboStorageFacade` lets a service use **one** `IStorageFacade` while talking to several backends (S3, Azure, SMB, and local disk) in the same process. The combo does not merge namespaces; it **routes each call** to the child facade whose store prefix matches the logical path.
+`ComboStorageFacade` lets a service use **one** `IStorageFacade` while talking to several backends (local files, SMB, Azure Blob, Amazon S3, Google Cloud Storage, and Alibaba OSS) in the same process. The combo does not merge namespaces; it **routes each call** to the child facade whose store prefix matches the logical path.
 
 This mirrors how a Windows user might open `\\fileserver\share\doc.pdf`, `s3://bucket/key`, and `C:\temp\local.txt` from the same app — the path itself tells you which store to use.
 
@@ -189,16 +189,22 @@ Every `IStorageFacade` operation (`EnumerateStorageInfo`, `GetStorageInfo`, `Rea
 logical path
     │
     ▼
-starts with "s3://orders"?          ──yes──► S3 facade
+starts with "s3://orders"?             ──yes──► S3 facade
     │ no
     ▼
 starts with "https://acct.../archive"? ──yes──► Azure facade
     │ no
     ▼
-starts with "\\fileserver\docs"?   ──yes──► SMB facade
+starts with "\\fileserver\docs"?     ──yes──► SMB facade
     │ no
     ▼
-default local-file facade          (OS path, e.g. /tmp/x or C:\data\x)
+starts with "gs://media"?              ──yes──► GCS facade
+    │ no
+    ▼
+starts with "oss://backups"?           ──yes──► OSS facade
+    │ no
+    ▼
+default local-file facade             (OS path, e.g. /tmp/x or C:\data\x)
 ```
 
 Matching is implemented as:
@@ -232,7 +238,7 @@ This default is **not** added to the prefix routing table. `FileStorageProviderC
 
 Instead, the default acts purely as a **catch-all**:
 
-- Registered prefixes cover your remote stores (S3 URI, Azure container URL, SMB UNC root).
+- Registered prefixes cover your remote stores (S3 / GCS / OSS URI, Azure container URL, SMB UNC root).
 - Everything else is treated as a **native filesystem path** on the machine running the process.
 
 The local provider passes `logicalPath` straight to `System.IO` (`File.OpenRead`, `Directory.CreateDirectory`, etc.), so combo fallback paths must be valid for the host OS.
@@ -244,7 +250,10 @@ Example fallback paths:
 | `/tmp/combo/local.txt` | Default local file facade |
 | `C:\Users\me\Downloads\file.pdf` | Default local file facade |
 | `s3://orders/a.pdf` | S3 facade (registered prefix) |
+| `https://acct.blob.core.windows.net/archive/a.pdf` | Azure facade (registered prefix) |
 | `\\fileserver\docs\a.pdf` | SMB facade (registered prefix) |
+| `gs://media/a.mp4` | GCS facade (registered prefix) |
+| `oss://backups/a.bin` | OSS facade (registered prefix) |
 
 You do **not** configure the default local store separately — it is fixed to `FileStorageProviderConfig()` with no custom root. To use a different local root, pass an absolute OS path in your logical paths; the provider writes wherever that path points.
 
@@ -261,7 +270,13 @@ var smb = StorageFacadeFactory.GetStorageFacade(new SMBNetworkStorageProviderCon
     "fileserver", "Documents", "CORP", user, pass));
 // smb.GetName() => "\\fileserver\documents"
 
-var combo = new ComboStorageFacade(new List<IStorageFacade> { s3, azure, smb });
+var gcs = StorageFacadeFactory.GetStorageFacade(new GoogleCloudStorageProviderConfig("media"));
+// gcs.GetName() => "gs://media"
+
+var oss = StorageFacadeFactory.GetStorageFacade(new AlibabaOssStorageProviderConfig(endpoint, "backups"));
+// oss.GetName() => "oss://backups"
+
+var combo = new ComboStorageFacade(new List<IStorageFacade> { s3, azure, smb, gcs, oss });
 
 // S3 — prefix "s3://orders"
 await combo.WriteStorageAsync("s3://orders/invoices/2024/a.pdf", stream, createParentDirectories: true);
@@ -271,6 +286,12 @@ await combo.WriteStorageAsync("https://myaccount.blob.core.windows.net/archive/b
 
 // SMB — prefix "\\fileserver\documents"
 await combo.WriteStorageAsync(@"\\fileserver\Documents\reports\q1.pdf", stream, true);
+
+// GCS — prefix "gs://media"
+await combo.WriteStorageAsync("gs://media/clips/c.mp4", stream, true);
+
+// OSS — prefix "oss://backups"
+await combo.WriteStorageAsync("oss://backups/2024/d.bin", stream, true);
 
 // Local fallback — no registered prefix matches
 await combo.WriteStorageAsync(@"/var/app/scratch/temp.dat", stream, true);
@@ -337,9 +358,12 @@ make test                                                    # File only
 make -- test --use-s3-container --use-azure-container --use-smb-container
 ```
 
-`LiveProviderTests` covers every selected provider, including mid-stream abort + try-delete
-cleanup and unknown-length write + delete. S3 incomplete multipart abort is also covered by
-`LiveAwsS3MultipartCleanupTests` when `s3` is selected.
+`LiveProviderTests` covers every selected provider **through** `ComboStorageFacade`
+(`LiveProviderHost.Storage`), including mid-stream abort + try-delete cleanup and
+unknown-length write + delete. `LiveComboProviderTests` adds explicit remote-prefix + local
+fallback checks for each selected provider. When two or more remotes are selected,
+`LiveComboAllProvidersTests` registers all of them in one combo. S3 incomplete multipart
+abort is also covered by `LiveAwsS3MultipartCleanupTests` when `s3` is selected.
 
 See the root [README](../README.md#live-container-tests).
 

@@ -3,29 +3,29 @@
 namespace Beztek.Facade.Storage.Tests.Live
 {
     using System;
-    using System.Collections.Generic;
     using System.IO;
     using System.Text;
     using System.Threading.Tasks;
     using NUnit.Framework;
 
     /// <summary>
-    /// Live <see cref="ComboStorageFacade"/>: each selected remote provider + the combo's
-    /// built-in File fallback. Enabled whenever Make selects a remote backend
-    /// (e.g. <c>--use-s3-container</c>, <c>--use-gcs-container</c>).
+    /// Live <see cref="ComboStorageFacade"/> for every selected provider (File, S3, Azure, SMB,
+    /// GCS, OSS). Uses <see cref="LiveProviderHost.Storage"/> (already a combo wrapping that
+    /// provider) to assert prefix routing for remotes and the built-in File fallback for OS paths.
     /// </summary>
     [TestFixtureSource(typeof(LiveComboFixtureSource), nameof(LiveComboFixtureSource.Providers))]
     [Category("Live")]
     public class LiveComboProviderTests
     {
-        private readonly StorageFacadeType _remoteProviderType;
-        private LiveProviderHost _remoteHost;
-        private ComboStorageFacade _combo;
+        private readonly StorageFacadeType _providerType;
+        private LiveProviderHost _host;
+        private IStorageFacade _combo;
         private string _localTempRoot;
+        private bool _isRemote;
 
-        public LiveComboProviderTests(StorageFacadeType remoteProviderType)
+        public LiveComboProviderTests(StorageFacadeType providerType)
         {
-            _remoteProviderType = remoteProviderType;
+            _providerType = providerType;
         }
 
         [OneTimeSetUp]
@@ -33,8 +33,9 @@ namespace Beztek.Facade.Storage.Tests.Live
         {
             try
             {
-                _remoteHost = await LiveProviderHost.StartAsync(_remoteProviderType).ConfigureAwait(false);
-                _combo = new ComboStorageFacade(new List<IStorageFacade> { _remoteHost.Storage });
+                _isRemote = _providerType != StorageFacadeType.LocalFileStore;
+                _host = await LiveProviderHost.StartAsync(_providerType).ConfigureAwait(false);
+                _combo = _host.Storage;
                 _localTempRoot = Path.Combine(
                     Path.GetTempPath(),
                     "storage-facade-combo-live-" + Guid.NewGuid().ToString("N"));
@@ -46,17 +47,15 @@ namespace Beztek.Facade.Storage.Tests.Live
             }
             catch (Exception ex) when (LiveTestHelpers.IsStartupFailure(ex))
             {
-                Assert.Inconclusive($"Skipping Combo+{_remoteProviderType}: startup failed — {ex.Message}");
+                Assert.Inconclusive($"Skipping Combo+{_providerType}: startup failed — {ex.Message}");
             }
         }
 
         [OneTimeTearDown]
         public async Task OneTimeTearDown()
         {
-            (_combo as IDisposable)?.Dispose();
-
-            if (_remoteHost != null)
-                await _remoteHost.DisposeAsync().ConfigureAwait(false);
+            if (_host != null)
+                await _host.DisposeAsync().ConfigureAwait(false);
 
             if (!string.IsNullOrEmpty(_localTempRoot) && Directory.Exists(_localTempRoot))
             {
@@ -69,7 +68,7 @@ namespace Beztek.Facade.Storage.Tests.Live
         public void SetUp()
         {
             Assume.That(_combo, Is.Not.Null);
-            Assume.That(_remoteHost, Is.Not.Null);
+            Assume.That(_host, Is.Not.Null);
         }
 
         [Test]
@@ -80,9 +79,15 @@ namespace Beztek.Facade.Storage.Tests.Live
         }
 
         [Test]
-        public async Task RemotePrefix_RoundTripsThroughCombo()
+        public async Task ProviderPrefix_RoundTripsThroughCombo()
         {
-            string remotePath = _remoteHost.ObjectPath("combo/" + Guid.NewGuid().ToString("N") + ".txt");
+            if (!_isRemote)
+            {
+                Assert.Pass("File provider uses the combo local-file fallback (no remote prefix).");
+                return;
+            }
+
+            string remotePath = _host.ObjectPath("combo/" + Guid.NewGuid().ToString("N") + ".txt");
             byte[] payload = Encoding.UTF8.GetBytes("combo-remote-" + Guid.NewGuid().ToString("N"));
 
             await RoundTripAsync(_combo, remotePath, payload).ConfigureAwait(false);
@@ -98,22 +103,34 @@ namespace Beztek.Facade.Storage.Tests.Live
         }
 
         [Test]
-        public void RemotePrefix_MissingObject_GetStorageInfoThrows()
+        public void ProviderPrefix_MissingObject_GetStorageInfoThrows()
         {
-            string remotePath = _remoteHost.ObjectPath("combo-missing/" + Guid.NewGuid().ToString("N") + ".txt");
+            if (!_isRemote)
+            {
+                Assert.Pass("File provider uses the combo local-file fallback (no remote prefix).");
+                return;
+            }
+
+            string remotePath = _host.ObjectPath("combo-missing/" + Guid.NewGuid().ToString("N") + ".txt");
             LiveTestHelpers.AssertThrowsOnMissing(
                 () => _combo.GetStorageInfo(remotePath),
-                $"Combo GetStorageInfo missing remote ({_remoteProviderType})");
+                $"Combo GetStorageInfo missing remote ({_providerType})");
         }
 
         [Test]
-        public async Task RemotePrefix_MissingObject_ReadThrows()
+        public async Task ProviderPrefix_MissingObject_ReadThrows()
         {
-            string remotePath = _remoteHost.ObjectPath("combo-missing/" + Guid.NewGuid().ToString("N") + ".txt");
+            if (!_isRemote)
+            {
+                Assert.Pass("File provider uses the combo local-file fallback (no remote prefix).");
+                return;
+            }
+
+            string remotePath = _host.ObjectPath("combo-missing/" + Guid.NewGuid().ToString("N") + ".txt");
             var info = new StorageInfo { LogicalPath = remotePath, IsFile = true, Name = "gone" };
             await LiveTestHelpers.AssertThrowsOnMissingAsync(
                 () => _combo.ReadStorageAsync(info),
-                $"Combo ReadStorageAsync missing remote ({_remoteProviderType})").ConfigureAwait(false);
+                $"Combo ReadStorageAsync missing remote ({_providerType})").ConfigureAwait(false);
         }
 
         [Test]

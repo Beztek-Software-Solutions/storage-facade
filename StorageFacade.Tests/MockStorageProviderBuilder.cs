@@ -11,7 +11,7 @@ namespace Beztek.Facade.Storage.Tests
     using Moq;
 
     /// <summary>
-    /// Builds Moq <see cref="IStorageProvider"/> instances that simulate remote stores (S3, Azure, SMB)
+    /// Builds Moq <see cref="IStorageProvider"/> instances that simulate remote stores (S3, Azure, SMB, GCS, OSS)
     /// with in-memory backing so tests do not require cloud credentials or network shares.
     /// </summary>
     internal static class MockStorageProviderBuilder
@@ -63,6 +63,12 @@ namespace Beztek.Facade.Storage.Tests
 
         internal static IStorageFacade CreateSmbFacade(string server = "fileserver", string share = "data") =>
             CreateFacade($@"\\{server}\{share}", StorageFacadeType.SMBNetworkStore);
+
+        internal static IStorageFacade CreateGcsFacade(string bucket = "media") =>
+            CreateFacade($"gs://{bucket}", StorageFacadeType.GoogleCloudStorageStore);
+
+        internal static IStorageFacade CreateOssFacade(string bucket = "archive") =>
+            CreateFacade($"oss://{bucket}", StorageFacadeType.AlibabaOssStore);
 
         private static IEnumerable<StorageInfo> Enumerate(
             Dictionary<string, byte[]> store,
