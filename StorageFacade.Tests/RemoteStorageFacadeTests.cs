@@ -92,7 +92,7 @@ namespace Beztek.Facade.Storage.Tests
                 Assert.That(reader.ReadToEnd(), Is.EqualTo(contents));
 
             await storageFacade.DeleteStorageAsync(path);
-            Assert.Throws<FileNotFoundException>(() => storageFacade.GetStorageInfo(path));
+            Assert.Throws<StorageNotFoundException>(() => storageFacade.GetStorageInfo(path));
         }
 
         private static async Task WriteText(IStorageFacade facade, string path, string contents)

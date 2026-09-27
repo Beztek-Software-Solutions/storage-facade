@@ -90,7 +90,7 @@ namespace Beztek.Facade.Storage.Tests
         private static StorageInfo GetStorageInfo(Dictionary<string, byte[]> store, string storagePath)
         {
             if (!store.TryGetValue(storagePath, out byte[] data))
-                throw new FileNotFoundException($"Object not found: {storagePath}");
+                throw new StorageNotFoundException(storagePath);
 
             return BuildStorageInfo(storagePath, data);
         }
@@ -98,7 +98,7 @@ namespace Beztek.Facade.Storage.Tests
         private static Task<Stream> ReadStorageAsync(Dictionary<string, byte[]> store, StorageInfo info)
         {
             if (!store.TryGetValue(info.LogicalPath, out byte[] data))
-                throw new FileNotFoundException($"Object not found: {info.LogicalPath}");
+                throw new StorageNotFoundException(info.LogicalPath);
 
             return Task.FromResult<Stream>(new MemoryStream(data, writable: false));
         }
@@ -114,7 +114,7 @@ namespace Beztek.Facade.Storage.Tests
         private static Task DeleteStorageAsync(Dictionary<string, byte[]> store, string storagePath)
         {
             if (!store.Remove(storagePath))
-                throw new FileNotFoundException($"Object not found: {storagePath}");
+                throw new StorageNotFoundException(storagePath);
 
             return Task.CompletedTask;
         }
@@ -122,7 +122,7 @@ namespace Beztek.Facade.Storage.Tests
         private static Task<string> ComputeMd5Checksum(Dictionary<string, byte[]> store, string storagePath)
         {
             if (!store.TryGetValue(storagePath, out byte[] data))
-                throw new FileNotFoundException($"Object not found: {storagePath}");
+                throw new StorageNotFoundException(storagePath);
 
             using var md5 = MD5.Create();
             return Task.FromResult(Convert.ToBase64String(md5.ComputeHash(data)));

@@ -176,7 +176,7 @@ namespace Beztek.Facade.Storage.Providers
         {
             string blobName = GetRelativePath(logicalPath);
             if (!await blobContainerAdapter.BlobExistsAsync(blobName))
-                throw new FileNotFoundException($"Unable to find {logicalPath}", logicalPath);
+                throw new StorageNotFoundException(logicalPath);
 
             return await blobContainerAdapter.OpenReadAsync(blobName);
         }

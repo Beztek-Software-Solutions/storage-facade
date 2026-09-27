@@ -28,6 +28,10 @@ namespace Beztek.Facade.Storage
     /// It is not part of the prefix table; it handles any path that does not start with a registered
     /// prefix (typical OS paths such as <c>/tmp/file</c> or <c>C:\data\file</c>).
     /// </para>
+    /// <para>
+    /// Exception behavior matches <see cref="IStorageFacade"/>: child facades from
+    /// <see cref="StorageFacadeFactory"/> already normalize provider/SDK failures.
+    /// </para>
     /// </remarks>
     public class ComboStorageFacade : IStorageFacade, IDisposable
     {

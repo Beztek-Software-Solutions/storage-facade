@@ -29,7 +29,7 @@ namespace Beztek.Facade.Storage.Tests.Live
 
         /// <summary>
         /// Providers surface missing-object failures as SDK exceptions, <see cref="System.IO.IOException"/>,
-        /// or <see cref="FileNotFoundException"/>. Any thrown exception is the expected live contract.
+        /// or <see cref="StorageNotFoundException"/>. Any thrown exception is the expected live contract.
         /// </summary>
         internal static void AssertThrowsOnMissing(Action action, string because)
         {

@@ -218,7 +218,7 @@ Registered store names from the provider configs are typically lowercased (`s3:/
 | Default fallback | Any path that matches **no** registered prefix uses local files |
 | Path shape | Remote paths must include the store prefix (e.g. `s3://orders/invoices/a.pdf`, not `invoices/a.pdf`) |
 | Local paths | Standard OS paths (`/var/data/x`, `C:\temp\x`) typically match nothing registered and fall through to local files |
-| Errors | Missing objects → `FileNotFoundException` (or provider SDK exception); I/O / protocol failures → `StorageFacadeException` (`IOException`) |
+| Errors | Missing object (get/read/enumerate/checksum) → `StorageNotFoundException`; missing on delete → no-op; invalid args/cancel/dispose unchanged; all other I/O/protocol/SDK failures → `StorageFacadeException` (`IOException`) |
 
 ### Default local-file facade
 

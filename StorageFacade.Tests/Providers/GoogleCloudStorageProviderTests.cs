@@ -113,7 +113,7 @@ namespace Beztek.Facade.Storage.Tests
                 .Returns((string key, Stream dest) =>
                 {
                     if (!store.TryGetValue(key, out byte[] data))
-                        throw new FileNotFoundException(key);
+                        throw new StorageNotFoundException(key);
                     dest.Write(data);
                     return Task.CompletedTask;
                 });

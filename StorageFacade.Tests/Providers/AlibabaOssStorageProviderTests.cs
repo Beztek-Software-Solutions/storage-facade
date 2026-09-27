@@ -105,7 +105,7 @@ namespace Beztek.Facade.Storage.Tests
                 .Returns((string key) =>
                 {
                     if (!store.TryGetValue(key, out byte[] data))
-                        throw new FileNotFoundException(key);
+                        throw new StorageNotFoundException(key);
                     return new MemoryStream(data, writable: false);
                 });
 

@@ -159,7 +159,7 @@ namespace Beztek.Facade.Storage.Providers
 
                 fileStore.QueryDirectory(out fileList, directoryHandle, @$"{fileName}", FileInformationClass.FileDirectoryInformation);
                 if (fileList == null || fileList.Count == 0)
-                    throw new FileNotFoundException($"Unable to get the path to {relativeParentPath} - {status}", logicalPath);
+                    throw new StorageNotFoundException(logicalPath);
 
                 return GetStorageInfo(relativeParentPath, (FileDirectoryInformation)fileList[0]);
             }
@@ -454,9 +454,7 @@ namespace Beztek.Facade.Storage.Providers
 
             if (fileStatus != FileStatus.FILE_OPENED)
             {
-                throw new FileNotFoundException(
-                    $"Failed to open file: {fileName} under {relativeParentPath}: {fileStatus}",
-                    logicalPath);
+                throw new StorageNotFoundException(logicalPath);
             }
         }
 

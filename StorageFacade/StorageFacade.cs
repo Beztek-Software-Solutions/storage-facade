@@ -12,6 +12,15 @@ namespace Beztek.Facade.Storage
     /// Default <see cref="IStorageFacade"/> implementation that wraps an <see cref="IStorageProvider"/>
     /// and computes MD5 checksums on write.
     /// </summary>
+    /// <remarks>
+    /// Public exception contract (enforced here for every provider):
+    /// <list type="bullet">
+    /// <item><description>Missing object on enumerate / get / read / checksum → <see cref="StorageNotFoundException"/></description></item>
+    /// <item><description>Missing object on delete → no-op (idempotent)</description></item>
+    /// <item><description>Invalid arguments / cancel / dispose → unchanged</description></item>
+    /// <item><description>All other I/O, protocol, SDK, and checksum failures → <see cref="StorageFacadeException"/></description></item>
+    /// </list>
+    /// </remarks>
     public class StorageFacade : IStorageFacade, IDisposable
     {
         private readonly IStorageProvider storageProvider;
@@ -31,43 +40,133 @@ namespace Beztek.Facade.Storage
 
         /// <inheritdoc/>
         public IEnumerable<StorageInfo> EnumerateStorageInfo(string rootPath, bool isRecursive = false, StorageFilter storageFilter = null)
-            => storageProvider.EnumerateStorageInfo(rootPath, isRecursive, storageFilter);
+        {
+            IEnumerator<StorageInfo> enumerator;
+            try
+            {
+                enumerator = storageProvider.EnumerateStorageInfo(rootPath, isRecursive, storageFilter).GetEnumerator();
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForEnumerate(rootPath, ex);
+                throw;
+            }
+
+            try
+            {
+                while (true)
+                {
+                    bool moved;
+                    try
+                    {
+                        moved = enumerator.MoveNext();
+                    }
+                    catch (Exception ex)
+                    {
+                        StorageExceptionPolicy.RethrowForEnumerate(rootPath, ex);
+                        throw;
+                    }
+
+                    if (!moved)
+                        yield break;
+
+                    yield return enumerator.Current;
+                }
+            }
+            finally
+            {
+                enumerator.Dispose();
+            }
+        }
 
         /// <inheritdoc/>
-        public StorageInfo GetStorageInfo(string storagePath) => storageProvider.GetStorageInfo(storagePath);
+        public StorageInfo GetStorageInfo(string storagePath)
+        {
+            try
+            {
+                return storageProvider.GetStorageInfo(storagePath);
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForRead(storagePath, ex);
+                throw;
+            }
+        }
 
         /// <inheritdoc/>
         public async Task<Stream> ReadStorageAsync(StorageInfo storageInfo)
-            => await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
+        {
+            try
+            {
+                return await storageProvider.ReadStorageAsync(storageInfo).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForRead(storageInfo?.LogicalPath, ex);
+                throw;
+            }
+        }
 
         /// <inheritdoc/>
         public async Task<string> WriteStorageAsync(string storagePath, Stream inputStream, bool createParentDirectories = false, bool validateChecksum = false)
         {
-            HashAlgorithm hashAlgorithm = MD5.Create();
-            Stream stream = new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true);
-            await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories);
-            string inputChecksum = Convert.ToBase64String(hashAlgorithm.Hash);
-
-            if (validateChecksum)
+            try
             {
-                string outputChecksum = await storageProvider.ComputeMD5Checksum(storagePath);
-                if (!inputChecksum.Equals(outputChecksum))
-                {
-                    throw new StorageFacadeException(
-                        $"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
-                }
-            }
+                HashAlgorithm hashAlgorithm = MD5.Create();
+                Stream stream = new CryptoStream(inputStream, hashAlgorithm, CryptoStreamMode.Read, true);
+                await storageProvider.WriteStorageAsync(storagePath, stream, createParentDirectories).ConfigureAwait(false);
+                string inputChecksum = Convert.ToBase64String(hashAlgorithm.Hash);
 
-            return inputChecksum;
+                if (validateChecksum)
+                {
+                    string outputChecksum = await storageProvider.ComputeMD5Checksum(storagePath).ConfigureAwait(false);
+                    if (!inputChecksum.Equals(outputChecksum))
+                    {
+                        throw new StorageFacadeException(
+                            $"Output checksum ({outputChecksum}) does not match the input checksum ({inputChecksum})");
+                    }
+                }
+
+                return inputChecksum;
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForWrite(storagePath, ex);
+                throw;
+            }
         }
 
         /// <inheritdoc/>
         public async Task DeleteStorageAsync(string storagePath)
-            => await storageProvider.DeleteStorageAsync(storagePath);
+        {
+            try
+            {
+                await storageProvider.DeleteStorageAsync(storagePath).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (StorageExceptionPolicy.IsMissing(ex))
+            {
+                // Idempotent: File.Delete and S3 DeleteObject succeed when the key is already gone.
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForDelete(storagePath, ex);
+                throw;
+            }
+        }
 
         /// <inheritdoc/>
         public async Task<string> ComputeMD5Checksum(string storagePath)
-            => await storageProvider.ComputeMD5Checksum(storagePath);
+        {
+            try
+            {
+                return await storageProvider.ComputeMD5Checksum(storagePath).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                StorageExceptionPolicy.RethrowForRead(storagePath, ex);
+                throw;
+            }
+        }
 
         /// <inheritdoc/>
         public void Dispose()

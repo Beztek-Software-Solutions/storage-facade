@@ -202,7 +202,7 @@ namespace Beztek.Facade.Storage.Tests
             mock.Setup(a => a.BlobExistsAsync(It.IsAny<string>())).ReturnsAsync(false);
 
             var provider = new AzureBlobStorageProvider(_flatConfig, mock.Object);
-            Assert.ThrowsAsync<FileNotFoundException>(async () =>
+            Assert.ThrowsAsync<StorageNotFoundException>(async () =>
                 await provider.ReadStorageAsync(new StorageInfo { LogicalPath = "https://acct.blob.core.windows.net/data/missing.txt" }));
         }
     }

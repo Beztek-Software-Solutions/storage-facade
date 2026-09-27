@@ -183,7 +183,7 @@ namespace Beztek.Facade.Storage.Tests
                 .Returns(NTStatus.STATUS_SUCCESS);
 
             var provider = new SMBNetworkStorageProvider(_config, factory.Object);
-            Assert.Throws<FileNotFoundException>(() => provider.GetStorageInfo(@"\\fileserver\Docs\missing.txt"));
+            Assert.Throws<StorageNotFoundException>(() => provider.GetStorageInfo(@"\\fileserver\Docs\missing.txt"));
         }
 
         private static Mock<ISMBFileStore> CreateFileStoreMock(out Mock<ISmbClientFactory> factory)
